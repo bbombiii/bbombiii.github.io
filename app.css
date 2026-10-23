@@ -20,14 +20,14 @@
   --ease:cubic-bezier(.22,.8,.32,1);
 }
 *{box-sizing:border-box;margin:0;padding:0}
-html,body{height:100%}
+html,body{height:100%;overflow:hidden;overscroll-behavior:none}
 body{
   background:var(--bg);color:var(--txt);
   font-family:var(--font);font-size:16px;line-height:1.5;
   -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
 }
-#app{max-width:480px;margin:0 auto;min-height:100%;display:flex;flex-direction:column}
-main{flex:1;padding:calc(8px + env(safe-area-inset-top,0px)) 20px calc(104px + env(safe-area-inset-bottom,0px))}
+#app{max-width:480px;margin:0 auto;height:100vh;height:100dvh;display:flex;flex-direction:column}
+main{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:calc(8px + env(safe-area-inset-top,0px)) 20px 16px}
 
 /* --- cabecera --- */
 header.top{padding:22px 0 6px;display:flex;align-items:flex-start;gap:12px}
@@ -150,10 +150,8 @@ button:disabled{opacity:.45}
 .lesson-body b{color:var(--txt)}
 
 /* --- tab bar --- */
-.tabbar{position:fixed;left:50%;transform:translateX(-50%);bottom:0;width:100%;max-width:480px;
-  background:rgba(15,17,23,.82);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
-  border-top:1px solid var(--line);display:flex;justify-content:space-around;
-  padding:8px calc(6px + env(safe-area-inset-right,0px)) calc(10px + env(safe-area-inset-bottom,0px)) calc(6px + env(safe-area-inset-left,0px));z-index:10}
+.tabbar{flex:none;background:#0f1118;border-top:1px solid var(--line);display:flex;justify-content:space-around;
+  padding:8px calc(6px + env(safe-area-inset-right,0px)) calc(10px + env(safe-area-inset-bottom,0px)) calc(6px + env(safe-area-inset-left,0px))}
 .tabbar button{background:none;color:var(--mut);font-size:11px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px;padding:7px 12px;border-radius:14px;min-width:60px;transition:color .15s,transform .15s var(--ease)}
 .tabbar button:active{transform:scale(.92)}
 .tabbar button.on{color:var(--acc)}
@@ -162,7 +160,7 @@ button:disabled{opacity:.45}
 .tabbar svg{width:21px;height:21px}
 
 /* --- login --- */
-.login-wrap{min-height:100dvh;display:flex;flex-direction:column;justify-content:center;padding:calc(32px + env(safe-area-inset-top,0px)) 24px calc(32px + env(safe-area-inset-bottom,0px))}
+.login-wrap{min-height:100%;display:flex;flex-direction:column;justify-content:center;padding:calc(32px + env(safe-area-inset-top,0px)) 24px calc(32px + env(safe-area-inset-bottom,0px))}
 .logo-mark{width:64px;height:64px;border-radius:20px;background:linear-gradient(135deg,#5b6cf0,#8b5cf6);display:flex;align-items:center;justify-content:center;margin:0 auto 18px;color:#fff}
 .login-wrap h1{text-align:center}
 .login-wrap .sub{text-align:center;margin-bottom:22px}

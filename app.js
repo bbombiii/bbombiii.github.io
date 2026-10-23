@@ -247,7 +247,7 @@ async function render() {
   else if (tab==='estudios') content = vEstudios();
   else if (tab==='idiomas') content = vIdiomas();
   h(shell(content)); bindNav(); bindActions();
-  window.scrollTo(0,0);
+  app.querySelector('main').scrollTop = 0;
 }
 
 function bindActions() {
