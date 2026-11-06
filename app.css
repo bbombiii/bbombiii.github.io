@@ -189,7 +189,7 @@ a{color:var(--acc)}
 @media (min-width:960px){
   #app{max-width:1180px;flex-direction:row}
   main{flex:1;min-width:0;max-width:880px;margin:0 auto;padding:36px 28px 56px}
-  .tabbar{width:230px;flex:none;flex-direction:column;justify-content:flex-start;align-items:stretch;gap:2px;
+  .tabbar{order:-1;width:230px;flex:none;flex-direction:column;justify-content:flex-start;align-items:stretch;gap:2px;
     background:transparent;border-top:0;border-right:1px solid var(--line);
     padding:32px 16px 32px 24px}
   .tabbar::before{content:'Mi Sala';display:block;font-size:20px;font-weight:800;letter-spacing:-.02em;color:var(--txt);padding:0 14px 20px}
