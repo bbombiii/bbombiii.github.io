@@ -152,7 +152,7 @@ button:disabled{opacity:.45}
 /* --- tab bar --- */
 .tabbar{flex:none;background:#0f1118;border-top:1px solid var(--line);display:flex;justify-content:space-around;
   padding:8px calc(6px + env(safe-area-inset-right,0px)) calc(10px + env(safe-area-inset-bottom,0px)) calc(6px + env(safe-area-inset-left,0px))}
-.tabbar button{background:none;color:var(--mut);font-size:11px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px;padding:7px 12px;border-radius:14px;min-width:60px;transition:color .15s,transform .15s var(--ease)}
+.tabbar button{background:none;color:var(--mut);font-size:10.5px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px;padding:7px 6px;border-radius:14px;min-width:0;flex:1;transition:color .15s,transform .15s var(--ease)}
 .tabbar button:active{transform:scale(.92)}
 .tabbar button.on{color:var(--acc)}
 .tabbar button.on .ic-wrap{background:var(--acc-soft);border-radius:12px}
