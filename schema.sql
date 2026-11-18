@@ -19,3 +19,7 @@ create policy "solo samuel" on topics for all using ((auth.jwt()->>'email') in (
 create policy "solo samuel" on lessons for all using ((auth.jwt()->>'email') in ('samuelvillamancueto18@gmail.com','samuelvillamancueto@gmail.com')) with check ((auth.jwt()->>'email') in ('samuelvillamancueto18@gmail.com','samuelvillamancueto@gmail.com'));
 create policy "solo samuel" on quiz_results for all using ((auth.jwt()->>'email') in ('samuelvillamancueto18@gmail.com','samuelvillamancueto@gmail.com')) with check ((auth.jwt()->>'email') in ('samuelvillamancueto18@gmail.com','samuelvillamancueto@gmail.com'));
 create policy "solo samuel" on resources for all using ((auth.jwt()->>'email') in ('samuelvillamancueto18@gmail.com','samuelvillamancueto@gmail.com')) with check ((auth.jwt()->>'email') in ('samuelvillamancueto18@gmail.com','samuelvillamancueto@gmail.com'));
+
+create table if not exists kana_stats(kana text primary key, ok int not null default 0, fail int not null default 0, last_fail timestamptz, updated_at timestamptz not null default now());
+alter table kana_stats enable row level security;
+create policy "solo samuel" on kana_stats for all using ((auth.jwt()->>'email') in ('samuelvillamancueto18@gmail.com','samuelvillamancueto@gmail.com')) with check ((auth.jwt()->>'email') in ('samuelvillamancueto18@gmail.com','samuelvillamancueto@gmail.com'));

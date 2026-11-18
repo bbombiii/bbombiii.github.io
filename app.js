@@ -46,7 +46,7 @@ const header = (title, sub, extra='') =>
   `<header class="top rise"><div class="grow"><h1 class="small-h">${title}</h1>${sub?`<div class="sub">${sub}</div>`:''}</div>${extra}</header>`;
 
 async function loadAll() {
-  const [t,n,tp,l,r,res,ta] = await Promise.all([
+  const [t,n,tp,l,r,res,ta,ks] = await Promise.all([
     sb.from('tasks').select('*').order('created_at',{ascending:false}),
     sb.from('notes').select('*').order('updated_at',{ascending:false}),
     sb.from('topics').select('*').order('ord'),
@@ -54,8 +54,11 @@ async function loadAll() {
     sb.from('resources').select('*').order('ord'),
     sb.from('quiz_results').select('*'),
     sb.from('test_attempts').select('*').order('created_at',{ascending:false}),
+    sb.from('kana_stats').select('*'),
   ]);
   cache = { tasks:t.data||[], notes:n.data||[], topics:tp.data||[], lessons:l.data||[], resources:r.data||[], results:res.data||[], testAttempts:ta.data||[] };
+  kanaStats = {};
+  (ks.data||[]).forEach(row => { kanaStats[row.kana] = { ok:row.ok, fail:row.fail, last_fail:row.last_fail }; });
 }
 
 const examInfo = () => {
@@ -287,6 +290,136 @@ function bindAgenda() {
   };
 }
 
+/* ---------- Kana (práctica de hiragana con registro de fallos) ---------- */
+const KANA_GROUPS = [
+  {id:'v', name:'Vocales', items:[['あ','a'],['い','i'],['う','u'],['え','e'],['お','o']]},
+  {id:'k', name:'か K', items:[['か','ka'],['き','ki'],['く','ku'],['け','ke'],['こ','ko']]},
+  {id:'s', name:'さ S', items:[['さ','sa'],['し','shi'],['す','su'],['せ','se'],['そ','so']]},
+  {id:'t', name:'た T', items:[['た','ta'],['ち','chi'],['つ','tsu'],['て','te'],['と','to']]},
+  {id:'n', name:'な N', items:[['な','na'],['に','ni'],['ぬ','nu'],['ね','ne'],['の','no']]},
+  {id:'h', name:'は H', items:[['は','ha'],['ひ','hi'],['ふ','fu'],['へ','he'],['ほ','ho']]},
+  {id:'m', name:'ま M', items:[['ま','ma'],['み','mi'],['む','mu'],['め','me'],['も','mo']]},
+  {id:'y', name:'や Y', items:[['や','ya'],['ゆ','yu'],['よ','yo']]},
+  {id:'r', name:'ら R', items:[['ら','ra'],['り','ri'],['る','ru'],['れ','re'],['ろ','ro']]},
+  {id:'w', name:'わ W', items:[['わ','wa'],['を','wo'],['ん','n']]},
+  {id:'d', name:'Dakuten がざだばぱ', items:[['が','ga'],['ぎ','gi'],['ぐ','gu'],['げ','ge'],['ご','go'],['ざ','za'],['じ','ji'],['ず','zu'],['ぜ','ze'],['ぞ','zo'],['だ','da'],['で','de'],['ど','do'],['ば','ba'],['び','bi'],['ぶ','bu'],['べ','be'],['ぼ','bo'],['ぱ','pa'],['ぴ','pi'],['ぷ','pu'],['ぺ','pe'],['ぽ','po']]},
+  {id:'c', name:'Combos きゃしゃちゃ', items:[['きゃ','kya'],['きゅ','kyu'],['きょ','kyo'],['しゃ','sha'],['しゅ','shu'],['しょ','sho'],['ちゃ','cha'],['ちゅ','chu'],['ちょ','cho'],['にゃ','nya'],['にゅ','nyu'],['にょ','nyo'],['ひゃ','hya'],['ひゅ','hyu'],['ひょ','hyo'],['みゃ','mya'],['みゅ','myu'],['みょ','myo'],['りゃ','rya'],['りゅ','ryu'],['りょ','ryo'],['ぎゃ','gya'],['ぎゅ','gyu'],['ぎょ','gyo'],['じゃ','ja'],['じゅ','ju'],['じょ','jo'],['びゃ','bya'],['びゅ','byu'],['びょ','byo'],['ぴゃ','pya'],['ぴゅ','pyu'],['ぴょ','pyo']]}
+];
+const KANA_READ = {}; KANA_GROUPS.forEach(g => g.items.forEach(([k,r]) => KANA_READ[k] = r));
+const KANA_ALIAS = { si:'shi', ti:'chi', tu:'tsu', hu:'fu', zi:'ji', di:'ji', du:'zu', o:'wo' };
+let kanaStats = {};
+let kz = null;
+const kzShuffle = a => { for (let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; };
+
+function kanaHit(k, okAns) {
+  const cur = kanaStats[k] || { ok:0, fail:0, last_fail:null };
+  const row = { kana:k, ok:cur.ok+(okAns?1:0), fail:cur.fail+(okAns?0:1),
+    last_fail: okAns ? cur.last_fail : new Date().toISOString(), updated_at:new Date().toISOString() };
+  kanaStats[k] = { ok:row.ok, fail:row.fail, last_fail:row.last_fail };
+  sb.from('kana_stats').upsert(row).then(()=>{});
+}
+
+function openKana() {
+  let sel = null;
+  try { sel = JSON.parse(localStorage.getItem('salaKanaSel')||'null'); } catch(e) {}
+  kz = { phase:'setup', sel: (sel && sel.length ? sel : KANA_GROUPS.filter(g=>g.id!=='d'&&g.id!=='c').map(g=>g.id)),
+         deck:[], pos:0, total:0, cleared:0, firstTryOk:0, wrongs:[], fb:null };
+  renderKana();
+}
+function renderKana() {
+  h(shell(vKana())); bindNav(); bindKana();
+  app.querySelector('[data-back]').onclick = () => { tab='idiomas'; render(); };
+}
+
+function vKana() {
+  const head = `<header class="top rise"><button class="icon-btn" data-back>${ic('back',18)}</button>
+    <div class="grow"><h1 class="small-h">Práctica de kana</h1><div class="sub">Hiragana · escribe la lectura en romaji</div></div></header>`;
+  if (kz.phase === 'setup') {
+    const total = KANA_GROUPS.filter(g => kz.sel.includes(g.id)).reduce((n,g) => n + g.items.length, 0);
+    const fails = Object.entries(kanaStats).filter(([k,s]) => s.fail > 0)
+      .sort((a,b) => b[1].fail - a[1].fail || new Date(b[1].last_fail||0) - new Date(a[1].last_fail||0)).slice(0,8);
+    return head + `
+    <div class="card rise"><b>Elige qué practicar</b>
+      <div class="chips" style="margin-top:12px">${KANA_GROUPS.map(g => `<div class="chip ${kz.sel.includes(g.id)?'on':''}" data-kg="${g.id}">${esc(g.name)}</div>`).join('')}</div>
+      <button class="btn primary block" id="kz-start" style="margin-top:16px" ${total?'':'disabled'}>Empezar · ${total} kana</button>
+    </div>
+    ${fails.length ? `<div class="sec rise"><h2>Dónde fallas</h2></div>
+    <div class="card rise">${fails.map(([k,s]) => `<div class="kz-failrow"><span class="kz-k">${k}</span><span class="grow mut">${esc(KANA_READ[k]||'')}</span><span class="pill no">${s.fail}✗</span></div>`).join('')}</div>` : ''}`;
+  }
+  if (kz.phase === 'quiz') {
+    const item = kz.deck[kz.pos];
+    return head + `
+    <div class="card rise">
+      <div class="mut small">${kz.cleared}/${kz.total} · a la primera ${kz.firstTryOk}</div>
+      <div class="bar" style="margin-top:8px"><i style="width:${kz.total?Math.round(kz.cleared/kz.total*100):0}%"></i></div>
+      <div class="kz-big">${item[0]}</div>
+      ${kz.fb
+        ? `<div class="kz-fb ${kz.fb.ok?'ok':'no'}">${kz.fb.ok?'✓ Correcto':'✗ Era <b>'+esc(item[1])+'</b>'}</div>
+           <button class="btn primary block" id="kz-next">Siguiente</button>`
+        : `<input class="inp kz-inp" id="kz-ans" placeholder="romaji…" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+           <button class="btn primary block" id="kz-check" style="margin-top:12px">Comprobar</button>`}
+    </div>`;
+  }
+  const uniq = [];
+  kz.wrongs.forEach(it => { if (!uniq.some(u => u[0]===it[0])) uniq.push(it); });
+  return head + `
+  <div class="card rise" style="text-align:center">
+    <div class="kz-score">${kz.firstTryOk}/${kz.total}</div>
+    <div class="mut">aciertos a la primera</div>
+  </div>
+  ${uniq.length ? `<div class="sec rise"><h2>Fallados en esta ronda</h2></div>
+  <div class="card rise">${uniq.map(([k,r]) => `<div class="kz-failrow"><span class="kz-k">${k}</span><span class="grow mut">${esc(r)}</span></div>`).join('')}</div>
+  <button class="btn primary block" id="kz-retry" style="margin-top:12px">Repetir fallados (${uniq.length})</button>`
+  : `<div class="card rise" style="text-align:center"><b>Sin fallos. Muy bien.</b></div>`}
+  <button class="btn ghost block" id="kz-again" style="margin-top:10px">Elegir kana</button>`;
+}
+
+function bindKana() {
+  app.querySelectorAll('[data-kg]').forEach(c => c.onclick = () => {
+    const id = c.dataset.kg;
+    kz.sel = kz.sel.includes(id) ? kz.sel.filter(x => x!==id) : [...kz.sel, id];
+    localStorage.setItem('salaKanaSel', JSON.stringify(kz.sel));
+    renderKana();
+  });
+  const start = document.getElementById('kz-start');
+  if (start) start.onclick = () => {
+    const items = KANA_GROUPS.filter(g => kz.sel.includes(g.id)).flatMap(g => g.items);
+    if (!items.length) return;
+    kz.deck = kzShuffle(items.map(it => [...it]));
+    kz.pos = 0; kz.total = kz.deck.length; kz.cleared = 0; kz.firstTryOk = 0; kz.wrongs = []; kz.fb = null;
+    kz.phase = 'quiz'; renderKana();
+  };
+  const check = document.getElementById('kz-check');
+  const ans = document.getElementById('kz-ans');
+  if (ans) { ans.focus(); ans.onkeydown = e => { if (e.key==='Enter' && check) check.click(); }; }
+  if (check) check.onclick = () => {
+    const item = kz.deck[kz.pos];
+    const a = (ans.value||'').trim().toLowerCase();
+    if (!a) { ans.focus(); return; }
+    const ok = a === item[1] || KANA_ALIAS[a] === item[1];
+    if (!item._t) { item._t = true; if (ok) kz.firstTryOk++; else kz.wrongs.push(item); }
+    kanaHit(item[0], ok);
+    if (ok) kz.cleared++; else kz.deck.push(item);
+    kz.fb = { ok }; renderKana();
+  };
+  const next = document.getElementById('kz-next');
+  if (next) { next.focus(); next.onkeydown = e => { if (e.key==='Enter') next.click(); }; next.onclick = () => {
+    kz.pos++; kz.fb = null;
+    kz.phase = kz.pos >= kz.deck.length ? 'results' : 'quiz';
+    renderKana();
+  }; }
+  const retry = document.getElementById('kz-retry');
+  if (retry) retry.onclick = () => {
+    const uniq = [];
+    kz.wrongs.forEach(it => { if (!uniq.some(u => u[0]===it[0])) uniq.push(it); });
+    kz.deck = kzShuffle(uniq.map(it => [it[0], it[1]]));
+    kz.pos = 0; kz.total = kz.deck.length; kz.cleared = 0; kz.firstTryOk = 0; kz.wrongs = []; kz.fb = null;
+    kz.phase = 'quiz'; renderKana();
+  };
+  const again = document.getElementById('kz-again');
+  if (again) again.onclick = () => { kz.phase = 'setup'; renderKana(); };
+}
+
 function vHoy() {
   const pend = cache.tasks.filter(t=>!t.done).slice(0,3);
   const nextLesson = cache.lessons.find(l => !cache.results.some(r => r.lesson_id===l.id));
@@ -426,6 +559,10 @@ function vIdiomas() {
     <div class="grow"><b>Progreso del plan</b><div class="mut small">${lp.hechas} de ${lp.total} sesiones completadas</div></div></div>
     <div class="bar"><i style="width:${lp.total?Math.round(lp.hechas/lp.total*100):0}%"></i></div>
   </div>
+  <div class="card clickable rise" style="animation-delay:.07s" data-kana><div class="lesson-row">
+    <span class="lang-badge ja">あ</span>
+    <div class="grow"><b>Práctica de kana</b><div class="meta">Hiragana · lectura en romaji, con registro de fallos</div></div>
+    ${ic('chev',16)}</div></div>
   ${cache.lessons.map((l,i)=>{
     const res = cache.results.find(r=>r.lesson_id===l.id);
     return `<div class="card clickable rise" style="animation-delay:${.08+i*.04}s" data-lesson="${l.id}"><div class="lesson-row">
@@ -672,6 +809,7 @@ function bindActions() {
   if (newNote) newNote.onclick = () => openNote(null);
   app.querySelectorAll('[data-note]').forEach(b => b.onclick = () => openNote(cache.notes.find(x=>x.id===b.dataset.note)));
   app.querySelectorAll('[data-lesson]').forEach(b => b.onclick = () => openLesson(cache.lessons.find(x=>x.id===b.dataset.lesson)));
+  app.querySelectorAll('[data-kana]').forEach(b => b.onclick = openKana);
   app.querySelectorAll('[data-bank]').forEach(b => b.onclick = () => openBank(BANKS.find(x=>x.bank===b.dataset.bank)));
 }
 
