@@ -288,7 +288,7 @@ function vTestBank(b) {
 let trun = null;
 
 async function startTestRun(b, onlyFailed) {
-  h(shell(`${header(esc(b.bank),'Cargando preguntas...')}`)); bindNav();
+  h(shell(`<header class="top rise"><button class="icon-btn" data-back>${ic('back',18)}</button><div class="grow"><h1 class="small-h">${esc(b.bank)}</h1><div class="sub">Cargando preguntas...</div></div></header>`)); bindNav();
   app.querySelector('[data-back]').onclick = () => openBank(b);
   const { data } = await sb.from('test_questions').select('*').eq('bank', b.bank).order('ord');
   let list = data || [];
@@ -354,7 +354,7 @@ function renderRun() {
 async function finishRun() {
   const total = trun.answers.length;
   const score = trun.answers.filter(a=>a.correct).length;
-  h(shell(`${header(esc(trun.bank.bank),'Guardando resultado...')}`)); bindNav();
+  h(shell(`<header class="top rise"><div class="grow"><h1 class="small-h">${esc(trun.bank.bank)}</h1><div class="sub">Guardando resultado...</div></div></header>`)); bindNav();
   let att = null;
   const { data:attData } = await sb.from('test_attempts').insert({ bank:trun.bank.bank, total, score }).select().single();
   att = attData;
