@@ -3,7 +3,8 @@ import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js
 const CFG = window.SALA_CONFIG || {};
 const app = document.getElementById('app');
 let sb = null, session = null, tab = 'hoy';
-let cache = { tasks: [], notes: [], topics: [], lessons: [], resources: [], results: [], testAttempts: [] };
+let cache = { tasks: [], notes: [], topics: [], lessons: [], resources: [], results: [], testAttempts: [], pers: [] };
+let persSigned = {};
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const h = html => { app.innerHTML = html; };
@@ -28,7 +29,8 @@ const IC = {
   sparkle:'<path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.9 2.9M15.5 15.5l2.9 2.9M18.4 5.6l-2.9 2.9M8.5 15.5l-2.9 2.9"/>',
   video:'<rect x="3" y="6" width="13" height="12" rx="3"/><path d="m16 10.5 5-3v9l-5-3"/>',
   link:'<path d="M10 14a5 5 0 0 0 7.1 0l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1"/><path d="M14 10a5 5 0 0 0-7.1 0l-2 2a5 5 0 0 0 7.1 7.1l1.1-1.1"/>',
-  target:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/>'
+  target:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/>',
+  settings:'<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>'
 };
 const HAT = (w,cls) => `<svg class="${cls}" width="${w}" height="${Math.round(w*0.69)}" viewBox="0 0 64 44"><ellipse cx="32" cy="32" rx="30" ry="9" fill="#e6c15c" stroke="#a8812f" stroke-width="2"/><path d="M13 30 Q13 6 32 6 Q51 6 51 30 Q32 22 13 30 Z" fill="#e6c15c" stroke="#a8812f" stroke-width="2"/><path d="M14 27 Q32 19 50 27 L50 31 Q32 23 14 31 Z" fill="#d64545"/></svg>`;
 const LOGPOSE = s => `<svg width="${s}" height="${s}" viewBox="0 0 64 64"><circle cx="32" cy="32" r="26" fill="#0f1420" stroke="#e6c15c" stroke-width="2.5"/><circle cx="32" cy="32" r="20" fill="none" stroke="#2b3350" stroke-width="1.5"/><circle cx="32" cy="32" r="14" fill="none" stroke="#2b3350" stroke-width="1"/><path d="M32 32 L44 18 L34 34 Z" fill="#d64545"/><path d="M32 32 L20 46 L30 30 Z" fill="#7c87f8"/><circle cx="32" cy="32" r="3" fill="#e6c15c"/><text x="32" y="13" text-anchor="middle" fill="#e6c15c" font-size="8" font-weight="700">N</text></svg>`;
@@ -59,9 +61,16 @@ async function loadAll() {
     sb.from('test_attempts').select('*').order('created_at',{ascending:false}),
     sb.from('kana_stats').select('*'),
   ]);
-  cache = { tasks:t.data||[], notes:n.data||[], topics:tp.data||[], lessons:l.data||[], resources:r.data||[], results:res.data||[], testAttempts:ta.data||[] };
+  const { data: persRows } = await sb.from('personalizacion').select('*').order('created_at',{ascending:false});
+  cache = { tasks:t.data||[], notes:n.data||[], topics:tp.data||[], lessons:l.data||[], resources:r.data||[], results:res.data||[], testAttempts:ta.data||[], pers:persRows||[] };
   kanaStats = {};
   (ks.data||[]).forEach(row => { kanaStats[row.kana] = { ok:row.ok, fail:row.fail, last_fail:row.last_fail }; });
+  persSigned = {};
+  const imgs = cache.pers.filter(r=>r.tipo==='imagen' && r.imagen_path).map(r=>r.imagen_path);
+  if (imgs.length) {
+    const { data: urls } = await sb.storage.from('personalizacion').createSignedUrls(imgs, 3600);
+    (urls||[]).forEach(u => { if (u && u.path && u.signedUrl) persSigned[u.path] = u.signedUrl; });
+  }
 }
 
 const examInfo = () => {
@@ -434,6 +443,7 @@ function vHoy() {
   return `
   <header class="top rise" style="animation-delay:.02s">
     <div class="grow"><div class="date-cap">${fechaStr}</div><h1>Hola, Samuel 👋</h1></div>
+    <button class="icon-btn" id="btn-cuenta" title="Cuenta">${ic('settings',18)}</button>
     <button class="icon-btn hat-host" id="btn-out" title="Cerrar sesión">${ic('logout',18)}${HAT(24,'hat-mini')}</button>
   </header>
   <div class="ship-space" aria-hidden="true"></div>
@@ -770,6 +780,100 @@ function openBank(b) {
   if (bf) bf.onclick = () => startTestRun(b, true);
 }
 
+/* ---------- Cuenta / Personalización ---------- */
+const PERS_ESTADO = { pendiente:['Pendiente','warn'], en_proceso:['En proceso','acc'], aplicada:['Aplicada','ok'], descartada:['Descartada',''] };
+
+function vCuenta() {
+  const email = session?.user?.email || '';
+  return `<header class="top rise"><button class="icon-btn" data-back>${ic('back',18)}</button>
+  <div class="grow"><h1 class="small-h">Cuenta</h1><div class="sub">${esc(email)}</div></div></header>
+
+  <div class="sec rise" style="animation-delay:.04s"><h2>Personalización</h2></div>
+  <div class="card rise" style="animation-delay:.06s">
+    <div class="mut small" style="margin-bottom:10px">Pide cómo quieres tu Sala: escribe una petición o sube una imagen de referencia. Helena la revisa periódicamente, te propone el cambio y, solo si lo apruebas, lo aplica. Nada cambia sin tu OK.</div>
+    <textarea id="pers-text" placeholder="Ej.: quiero un fondo con los barcos de mi anime favorito, tonos oscuros..." style="min-height:90px"></textarea>
+    <div style="display:flex;gap:8px">
+      <button class="btn primary grow" id="pers-send">${ic('check',16,2.2)} Enviar petición</button>
+      <button class="btn" id="pers-img-btn">${ic('plus',16,2)} Imagen</button>
+      <input type="file" id="pers-file" accept="image/*" class="hidden">
+    </div>
+    <div id="pers-upmsg" class="mut small" style="margin-top:6px"></div>
+  </div>
+
+  ${cache.pers.length ? cache.pers.map((p,i) => {
+    const [lab, cls] = PERS_ESTADO[p.estado] || [p.estado, ''];
+    const cuando = new Date(p.created_at).toLocaleDateString('es-ES',{day:'numeric',month:'short'});
+    return `<div class="card rise" style="animation-delay:${.08+i*.04}s">
+      <div class="row" style="align-items:flex-start">
+        ${p.tipo==='imagen' && persSigned[p.imagen_path]
+          ? `<img src="${persSigned[p.imagen_path]}" alt="referencia" style="width:56px;height:56px;object-fit:cover;border-radius:12px;flex:none">`
+          : `<span class="link-ic" style="width:40px;height:40px">${ic(p.tipo==='imagen'?'sparkle':'note',17)}</span>`}
+        <div class="grow">
+          <b style="font-size:14px">${p.tipo==='imagen' ? 'Imagen de referencia' : esc(p.texto||'')}</b>
+          <div class="mut small">${cuando}${p.activa?' · referencia activa':''}${p.nota?' · '+esc(p.nota):''}</div>
+        </div>
+        <span class="pill ${cls}">${lab}</span>
+      </div>
+      <div class="row" style="margin-top:10px;gap:8px">
+        ${p.activa ? '' : `<button class="btn ghost" data-pers-activa="${p.id}">Usar esta referencia</button>`}
+        <button class="btn danger-ghost" data-pers-del="${p.id}" style="margin-left:auto">${ic('trash',15)}</button>
+      </div>
+    </div>`;
+  }).join('') : '<div class="empty">Aún no has pedido ninguna personalización.</div>'}
+
+  <div class="sec rise" style="animation-delay:.1s"><h2>Info</h2></div>
+  <div class="card rise" style="animation-delay:.12s">
+    <div class="row"><b class="grow" style="font-size:14px">Mi Sala</b><span class="pill acc">V1.0.1</span></div>
+    <div class="mut small" style="margin-top:6px">Tus peticiones e imágenes son privadas: solo las ves tú y solo se usan para personalizar tu Sala.</div>
+  </div>`;
+}
+
+function openCuenta() {
+  h(shell(vCuenta())); bindNav();
+  app.querySelector('[data-back]').onclick = () => { tab='hoy'; render(); };
+  document.getElementById('pers-send').onclick = async () => {
+    const ta = document.getElementById('pers-text');
+    const texto = ta.value.trim();
+    if (!texto) return;
+    const { data } = await sb.from('personalizacion').insert({ tipo:'prompt', texto }).select().single();
+    if (data) { cache.pers.unshift(data); ta.value=''; openCuenta(); }
+  };
+  const fileInp = document.getElementById('pers-file');
+  document.getElementById('pers-img-btn').onclick = () => fileInp.click();
+  fileInp.onchange = async () => {
+    const f = fileInp.files && fileInp.files[0];
+    if (!f) return;
+    const msg = document.getElementById('pers-upmsg');
+    msg.textContent = 'Subiendo imagen...';
+    const safe = f.name.replace(/[^a-zA-Z0-9._-]/g,'_').slice(-60);
+    const path = session.user.id + '/' + Date.now() + '-' + safe;
+    const { error: upErr } = await sb.storage.from('personalizacion').upload(path, f, { cacheControl:'3600', upsert:false });
+    if (upErr) { msg.textContent = 'No se pudo subir la imagen.'; return; }
+    const { data } = await sb.from('personalizacion').insert({ tipo:'imagen', imagen_path:path, texto:f.name }).select().single();
+    if (data) cache.pers.unshift(data);
+    const { data: su } = await sb.storage.from('personalizacion').createSignedUrl(path, 3600);
+    if (su && su.signedUrl) persSigned[path] = su.signedUrl;
+    msg.textContent = '';
+    openCuenta();
+  };
+  app.querySelectorAll('[data-pers-activa]').forEach(b => b.onclick = async () => {
+    const id = b.dataset.persActiva;
+    await sb.from('personalizacion').update({ activa:false, updated_at:new Date().toISOString() }).eq('activa', true);
+    await sb.from('personalizacion').update({ activa:true, updated_at:new Date().toISOString() }).eq('id', id);
+    cache.pers.forEach(p => p.activa = (p.id===id));
+    openCuenta();
+  });
+  app.querySelectorAll('[data-pers-del]').forEach(b => b.onclick = async () => {
+    if (!confirm('¿Borrar esta petición?')) return;
+    const id = b.dataset.persDel;
+    const p = cache.pers.find(x=>x.id===id);
+    await sb.from('personalizacion').delete().eq('id', id);
+    if (p && p.imagen_path) await sb.storage.from('personalizacion').remove([p.imagen_path]);
+    cache.pers = cache.pers.filter(x=>x.id!==id);
+    openCuenta();
+  });
+}
+
 /* ---------- Lógica ---------- */
 
 async function render() {
@@ -782,6 +886,7 @@ async function render() {
   else if (tab==='estudios') content = vEstudios();
   else if (tab==='tests') content = vTests();
   else if (tab==='idiomas') content = vIdiomas();
+  else if (tab==='cuenta') return openCuenta();
   h(shell(content)); bindNav(); bindActions(); bindAgenda();
   app.querySelector('main').scrollTop = 0;
 }
@@ -790,6 +895,8 @@ function bindActions() {
   app.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { tab=b.dataset.go; render(); });
   const out = document.getElementById('btn-out');
   if (out) out.onclick = async () => { await sb.auth.signOut(); };
+  const cta = document.getElementById('btn-cuenta');
+  if (cta) cta.onclick = () => { tab='cuenta'; render(); };
   app.querySelectorAll('[data-task]').forEach(b => b.onclick = async () => {
     const t = cache.tasks.find(x=>x.id===b.dataset.task);
     t.done=!t.done; render();
