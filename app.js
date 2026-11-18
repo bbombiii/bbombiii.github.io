@@ -797,7 +797,7 @@ function vCuenta() {
     <div style="display:flex;gap:8px">
       <button class="btn primary grow" id="pers-send">${ic('check',16,2.2)} Enviar petición</button>
       <button class="btn" id="pers-img-btn">${ic('plus',16,2)} Imagen</button>
-      <input type="file" id="pers-file" accept="image/*" class="hidden">
+      <input type="file" id="pers-file" accept="image/png,image/jpeg,image/webp,image/gif" class="hidden">
     </div>
     <div id="pers-upmsg" class="mut small" style="margin-top:6px"></div>
   </div>
@@ -848,7 +848,7 @@ function openCuenta() {
     const f = fileInp.files && fileInp.files[0];
     if (!f) return;
     const msg = document.getElementById('pers-upmsg');
-    if (!f.type || !f.type.startsWith('image/')) { msg.textContent = 'Solo se admiten imágenes (PNG, JPG, WebP o GIF).'; fileInp.value=''; return; }
+    if (!['image/png','image/jpeg','image/webp','image/gif'].includes(f.type)) { msg.textContent = 'Solo se admiten imágenes PNG, JPG, WebP o GIF.'; fileInp.value=''; return; }
     if (f.size > 5*1024*1024) { msg.textContent = 'La imagen pesa más de 5 MB. Prueba con una más ligera.'; fileInp.value=''; return; }
     msg.textContent = 'Subiendo imagen...';
     const safe = f.name.replace(/[^a-zA-Z0-9._-]/g,'_').slice(-60);
@@ -857,8 +857,11 @@ function openCuenta() {
     if (upErr) { msg.textContent = 'No se pudo subir la imagen.'; fileInp.value=''; return; }
     const { data, error: insErr } = await sb.from('personalizacion').insert({ tipo:'imagen', imagen_path:path, texto:f.name }).select().single();
     if (insErr || !data) {
-      await sb.storage.from('personalizacion').remove([path]);
-      msg.textContent = 'No se pudo registrar la imagen. Inténtalo de nuevo.'; fileInp.value=''; return;
+      const { error: rmErr } = await sb.storage.from('personalizacion').remove([path]);
+      msg.textContent = rmErr
+        ? 'No se pudo registrar la imagen y tampoco limpiar el archivo subido. Avisa a Helena para revisarlo.'
+        : 'No se pudo registrar la imagen. Inténtalo de nuevo.';
+      fileInp.value=''; return;
     }
     cache.pers.unshift(data);
     const { data: su } = await sb.storage.from('personalizacion').createSignedUrl(path, 3600);
@@ -878,7 +881,10 @@ function openCuenta() {
     if (!confirm('¿Borrar esta petición?')) return;
     const id = b.dataset.persDel;
     const p = cache.pers.find(x=>x.id===id);
-    if (p && p.imagen_path) await sb.storage.from('personalizacion').remove([p.imagen_path]);
+    if (p && p.imagen_path) {
+      const { error: rmErr } = await sb.storage.from('personalizacion').remove([p.imagen_path]);
+      if (rmErr) { alert('No se pudo borrar la imagen del almacenamiento; la petición sigue ahí para reintentar.'); return; }
+    }
     const { error: delErr } = await sb.from('personalizacion').delete().eq('id', id);
     if (delErr) { alert('No se pudo borrar la petición. Inténtalo de nuevo.'); return; }
     cache.pers = cache.pers.filter(x=>x.id!==id);
