@@ -14,6 +14,7 @@
   --warn-soft:rgba(251,191,36,.13);
   --danger:#f87171;
   --danger-soft:rgba(248,113,113,.12);
+  --straw:#e6c15c;
   --rad:18px;
   --rad-s:12px;
   --font:'Inter',-apple-system,system-ui,'Segoe UI',Roboto,sans-serif;
@@ -26,7 +27,13 @@ body{
   font-family:var(--font);font-size:16px;line-height:1.5;
   -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
 }
-#app{max-width:480px;margin:0 auto;height:100vh;height:100dvh;display:flex;flex-direction:column}
+/* --- fondo One Piece: ilustracion barcos + velo --- */
+body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:url('fondo-barcos.jpg') center top/cover no-repeat}
+body::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:linear-gradient(180deg, rgba(12,14,19,.10) 0%, rgba(12,14,19,.18) 30%, rgba(12,14,19,.42) 45%, rgba(12,14,19,.80) 68%, rgba(12,14,19,.92) 100%)}
+#app{position:relative;z-index:1;max-width:480px;margin:0 auto;height:100vh;height:100dvh;display:flex;flex-direction:column}
+.ship-space{height:clamp(150px,26vh,235px);flex:none}
 main{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:calc(8px + env(safe-area-inset-top,0px)) 20px 16px}
 
 /* --- cabecera --- */
@@ -266,3 +273,23 @@ a{color:var(--acc)}
 .kz-k{font-size:26px;min-width:34px;text-align:center}
 .kz-score{font-size:44px;font-weight:700}
 .pill.no{background:var(--danger-soft);color:var(--danger)}
+
+/* --- One Piece: sombrero de paja, Log Pose, WANTED --- */
+.hat-host{position:relative}
+.hat-mini{position:absolute;top:-9px;right:-8px;transform:rotate(14deg);pointer-events:none;z-index:2}
+.hat-tile{position:absolute;top:-8px;right:-9px;transform:rotate(16deg);pointer-events:none}
+.tabbar .ic-wrap{position:relative}
+.tabbar .hat-mini{top:-8px;right:-6px}
+.hero .logpose{position:absolute;right:16px;top:50%;transform:translateY(-50%);pointer-events:none;filter:drop-shadow(0 2px 6px rgba(0,0,0,.35))}
+.sec .roseta{flex:none;opacity:.9}
+.wanted{position:relative;background:linear-gradient(160deg,#2a2416,#1d1a10);border:1.5px solid #6b5a2e;border-radius:var(--rad);padding:16px;margin-bottom:12px;overflow:hidden}
+.wanted::before{content:"";position:absolute;inset:6px;border:1px dashed rgba(230,193,92,.35);border-radius:12px;pointer-events:none}
+.wanted .w-hat{position:absolute;top:8px;left:50%;transform:translateX(-50%) rotate(-6deg);pointer-events:none}
+.wanted .w-title{text-align:center;font-family:Georgia,serif;font-size:22px;font-weight:800;letter-spacing:.28em;color:var(--straw);margin-bottom:2px}
+.wanted .w-sub{text-align:center;font-family:Georgia,serif;font-size:10px;letter-spacing:.34em;color:#b8933d;margin-bottom:10px}
+.wanted .w-score{text-align:center;font-size:40px;font-weight:800;color:var(--straw);line-height:1}
+.wanted .w-label{text-align:center;font-size:12px;color:#cbb26a;margin-top:4px}
+@media (min-width:960px){
+  body::before{background-image:url('fondo-barcos-wide.jpg');background-position:right top}
+  .tabbar{background:rgba(12,14,19,.55);backdrop-filter:blur(8px)}
+}

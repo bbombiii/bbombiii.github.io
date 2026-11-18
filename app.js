@@ -30,6 +30,9 @@ const IC = {
   link:'<path d="M10 14a5 5 0 0 0 7.1 0l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1"/><path d="M14 10a5 5 0 0 0-7.1 0l-2 2a5 5 0 0 0 7.1 7.1l1.1-1.1"/>',
   target:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/>'
 };
+const HAT = (w,cls) => `<svg class="${cls}" width="${w}" height="${Math.round(w*0.69)}" viewBox="0 0 64 44"><ellipse cx="32" cy="32" rx="30" ry="9" fill="#e6c15c" stroke="#a8812f" stroke-width="2"/><path d="M13 30 Q13 6 32 6 Q51 6 51 30 Q32 22 13 30 Z" fill="#e6c15c" stroke="#a8812f" stroke-width="2"/><path d="M14 27 Q32 19 50 27 L50 31 Q32 23 14 31 Z" fill="#d64545"/></svg>`;
+const LOGPOSE = s => `<svg width="${s}" height="${s}" viewBox="0 0 64 64"><circle cx="32" cy="32" r="26" fill="#0f1420" stroke="#e6c15c" stroke-width="2.5"/><circle cx="32" cy="32" r="20" fill="none" stroke="#2b3350" stroke-width="1.5"/><circle cx="32" cy="32" r="14" fill="none" stroke="#2b3350" stroke-width="1"/><path d="M32 32 L44 18 L34 34 Z" fill="#d64545"/><path d="M32 32 L20 46 L30 30 Z" fill="#7c87f8"/><circle cx="32" cy="32" r="3" fill="#e6c15c"/><text x="32" y="13" text-anchor="middle" fill="#e6c15c" font-size="8" font-weight="700">N</text></svg>`;
+const ROSETA = s => `<svg class="roseta" width="${s}" height="${s}" viewBox="0 0 64 64"><circle cx="32" cy="32" r="24" fill="none" stroke="#e6c15c" stroke-width="3"/><path d="M32 12 L37 32 L32 52 L27 32 Z" fill="#e6c15c"/><path d="M12 32 L32 27 L52 32 L32 37 Z" fill="#e6c15c" opacity=".7"/></svg>`;
 const ic = (n, s=20, sw=1.8) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round">${IC[n]||''}</svg>`;
 
 const TABS = [['hoy','home','Hoy'],['agenda','calendar','Agenda'],['tareas','squareCheck','Tareas'],['apuntes','note','Apuntes'],['estudios','cap','Estudios'],['tests','target','Tests'],['idiomas','globe','Idiomas']];
@@ -37,7 +40,7 @@ const AREA_DOT = {personal:'area-personal',trabajo:'area-trabajo',estudios:'area
 
 function shell(content) {
   return `<main>${content}</main><nav class="tabbar">` +
-    TABS.map(([id,icn,label],i) => `<button class="${tab===id?'on':''}" data-tab="${id}"><span class="ic-wrap">${ic(icn)}</span>${label}</button>`).join('') + `</nav>`;
+    TABS.map(([id,icn,label],i) => `<button class="${tab===id?'on':''}" data-tab="${id}"><span class="ic-wrap">${ic(icn)}${(id==='hoy'||id==='idiomas')?HAT(15,'hat-mini'):''}</span>${label}</button>`).join('') + `</nav>`;
 }
 function bindNav() {
   app.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { tab = b.dataset.tab; render(); });
@@ -431,13 +434,14 @@ function vHoy() {
   return `
   <header class="top rise" style="animation-delay:.02s">
     <div class="grow"><div class="date-cap">${fechaStr}</div><h1>Hola, Samuel 👋</h1></div>
-    <button class="icon-btn" id="btn-out" title="Cerrar sesión">${ic('logout',18)}</button>
+    <button class="icon-btn hat-host" id="btn-out" title="Cerrar sesión">${ic('logout',18)}${HAT(24,'hat-mini')}</button>
   </header>
+  <div class="ship-space" aria-hidden="true"></div>
 
   ${nextLesson ? `
   <div class="hero rise" style="animation-delay:.06s" data-go="idiomas">
     <span class="glyph">${nextLesson.lang==='ja'?'あ':'Aa'}</span>
-    <div class="go">${ic('chev',16,2.2)}</div>
+    <span class="logpose">${LOGPOSE(54)}</span>
     <div class="kicker">Toca estudiar</div>
     <h3>${esc(nextLesson.title)}</h3>
     <div class="meta">${ic('clock',14)} Unos 10 min · ${nextLesson.lang==='ja'?'Japonés':'Inglés'}</div>
@@ -451,18 +455,18 @@ function vHoy() {
 
   <div class="tiles rise" style="animation-delay:.12s; margin-top:12px">
     <div class="tile">
-      <div class="lab">${ic('calendar',14)} Exámenes Ilerna</div>
+      <div class="lab">${LOGPOSE(15)} Log Pose · Exámenes</div>
       <div class="big">${ex.dias} <small>días</small></div>
       <div class="bar"><i class="warn" style="width:${Math.max(4,Math.min(100,100-ex.dias/2))}%"></i></div>
     </div>
     <div class="tile">
-      <div class="lab">${ic('globe',14)} Sesiones idiomas</div>
+      <div class="lab"><span class="hat-host">${ic('globe',14)}${HAT(13,'hat-tile')}</span> Sesiones idiomas</div>
       <div class="big">${lp.hechas}<small>/${lp.total}</small></div>
       <div class="bar"><i style="width:${lp.total?Math.round(lp.hechas/lp.total*100):0}%"></i></div>
     </div>
   </div>
 
-  <div class="sec rise" style="animation-delay:.18s"><h2>Tareas pendientes</h2><button class="link" data-go="tareas">Ver todas</button></div>
+  <div class="sec rise" style="animation-delay:.18s"><h2>${ROSETA(16)} Tareas pendientes</h2><button class="link" data-go="tareas">Ver todas</button></div>
   <div class="rise" style="animation-delay:.22s">
   ${pend.length ? pend.map(t=>`
     <div class="card task clickable"><button class="chk" data-task="${t.id}">${ic('check',14,3)}</button>
@@ -471,7 +475,7 @@ function vHoy() {
     : `<div class="empty">${ic('sparkle',26)}<div>Nada pendiente. Disfruta del día.</div></div>`}
   </div>
 
-  <div class="sec rise" style="animation-delay:.26s"><h2>Apuntes recientes</h2><button class="link" data-go="apuntes">Todos</button></div>
+  <div class="sec rise" style="animation-delay:.26s"><h2>${ROSETA(16)} Apuntes recientes</h2><button class="link" data-go="apuntes">Todos</button></div>
   <div class="rise" style="animation-delay:.3s">
   ${notas.length ? notas.map(n=>`
     <div class="card note-card clickable" data-note="${n.id}"><b>${esc(n.title)||'Sin título'}</b>
@@ -626,10 +630,19 @@ function vTestBank(b) {
   return `<header class="top rise"><button class="icon-btn" data-back>${ic('back',18)}</button>
   <div class="grow"><h1 class="small-h">${esc(b.bank)}</h1>
   <div class="sub">${esc(b.subject)} · 100 preguntas${b.comp?' · banco complementario':''}</div></div></header>
+  <div class="ship-space" aria-hidden="true"></div>
   <div class="tiles rise" style="animation-delay:.05s">
     <div class="tile"><div class="lab">${ic('target',14)} Intentos</div><div class="big">${st?st.n:0}</div></div>
     <div class="tile"><div class="lab">${ic('check',14)} Mejor nota</div><div class="big">${st?st.best+'<small>%</small>':'—'}</div></div>
   </div>
+  ${st ? `<div class="wanted rise" style="animation-delay:.07s">
+    ${HAT(44,'w-hat')}
+    <div style="height:22px"></div>
+    <div class="w-title">WANTED</div>
+    <div class="w-sub">MEJOR MARCA</div>
+    <div class="w-score">${st.best}%</div>
+    <div class="w-label">${esc(b.bank)} · tu mejor marca hasta ahora</div>
+  </div>` : ''}
   <button class="btn primary block rise" style="animation-delay:.08s" id="bt-start">${ic('play',17,2)} Empezar test de 100</button>
   ${fails>0 ? `<button class="btn block rise" style="animation-delay:.11s" id="bt-failed">${ic('sparkle',17,1.8)} Repasar las ${fails} falladas del último intento</button>` : ''}
   <div class="sec rise" style="animation-delay:.14s"><h2>Historial</h2><span class="count">${ats.length}</span></div>
