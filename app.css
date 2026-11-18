@@ -251,3 +251,6 @@ a{color:var(--acc)}
 .ag-times .inp{flex:1}
 .ag-hidden{display:none}
 .ag-allday{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--mut);margin:10px 0 2px}
+.ag-privacy{text-align:center;padding:16px 0 8px;font-size:12px}
+.ag-privacy a{color:#8b93a7;text-decoration:none}
+.ag-privacy a:hover{color:#b9bfcc;text-decoration:underline}

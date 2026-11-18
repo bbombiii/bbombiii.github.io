@@ -1,0 +1,70 @@
+const ALLOWED = ["samuelvillamancueto@gmail.com", "samuelvillamancueto18@gmail.com"];
+const CID = Deno.env.get("GOOGLE_CLIENT_ID")!;
+const CSECRET = Deno.env.get("GOOGLE_CLIENT_SECRET")!;
+const SB_URL = Deno.env.get("SUPABASE_URL")!;
+const SB_SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const SB_ANON = Deno.env.get("SUPABASE_ANON_KEY")!;
+const CB = `${SB_URL}/functions/v1/sala-calendar/callback`;
+
+async function accessToken(email: string): Promise<string | null> {
+  const r = await fetch(`${SB_URL}/rest/v1/calendar_tokens?user_email=eq.${encodeURIComponent(email)}&select=refresh_token`, {
+    headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` } });
+  const rows = await r.json();
+  if (!Array.isArray(rows) || !rows.length) return null;
+  const tr = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ client_id: CID, client_secret: CSECRET, refresh_token: rows[0].refresh_token, grant_type: "refresh_token" }) });
+  const tj = await tr.json();
+  return tj.access_token || null;
+}
+
+async function requestEmail(req: Request): Promise<string | null> {
+  const auth = req.headers.get("authorization") || "";
+  if (!auth) return null;
+  const u = await fetch(`${SB_URL}/auth/v1/user`, { headers: { apikey: SB_ANON, Authorization: auth } });
+  if (!u.ok) return null;
+  const ju = await u.json();
+  return (ju.email || "").toLowerCase() || null;
+}
+
+Deno.serve(async (req: Request) => {
+  const url = new URL(req.url);
+  if (url.pathname.endsWith("/callback")) {
+    const code = url.searchParams.get("code");
+    if (!code) return new Response("falta code", { status: 400 });
+    const tr = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ code, client_id: CID, client_secret: CSECRET, redirect_uri: CB, grant_type: "authorization_code" }) });
+    const tj = await tr.json();
+    if (!tj.refresh_token) return new Response("Google no devolvio refresh_token (posible consentimiento previo). Detalle: " + (tj.error || "sin refresh"), { status: 400 });
+    const ui = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", { headers: { Authorization: `Bearer ${tj.access_token}` } });
+    const uj = await ui.json();
+    const email = (uj.email || "").toLowerCase();
+    if (!ALLOWED.includes(email)) return new Response("cuenta no autorizada", { status: 403 });
+    await fetch(`${SB_URL}/rest/v1/calendar_tokens`, {
+      method: "POST",
+      headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}`, "content-type": "application/json", Prefer: "resolution=merge-duplicates" },
+      body: JSON.stringify({ user_email: email, refresh_token: tj.refresh_token, updated_at: new Date().toISOString() }) });
+    return new Response("<html><body style='font-family:sans-serif;background:#12141a;color:#e8e8ec;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0'><div style='text-align:center'><h2>Calendario conectado</h2><p>Ya puedes volver a la Sala.</p></div></body></html>", { headers: { "content-type": "text/html; charset=utf-8" } });
+  }
+  if (url.pathname.endsWith("/api") && req.method === "POST") {
+    const email = await requestEmail(req);
+    if (!email || !ALLOWED.includes(email)) return Response.json({ error: "no autorizado" }, { status: 401 });
+    const at = await accessToken(email);
+    if (!at) return Response.json({ error: "calendar_no_conectado" }, { status: 409 });
+    const { action, params = {} } = await req.json();
+    let method = "GET", gurl = "", payload: unknown = undefined;
+    if (action === "list_calendars") { gurl = "https://www.googleapis.com/calendar/v3/users/me/calendarList"; }
+    else if (action === "list_events") {
+      const qs = new URLSearchParams({ timeMin: params.timeMin, timeMax: params.timeMax, singleEvents: "true", orderBy: "startTime", maxResults: "250" });
+      gurl = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(params.calendarId)}/events?${qs}`;
+    } else if (action === "create_event") { method = "POST"; gurl = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(params.calendarId)}/events`; payload = params.event; }
+    else if (action === "update_event") { method = "PATCH"; gurl = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(params.calendarId)}/events/${encodeURIComponent(params.eventId)}`; payload = params.event; }
+    else if (action === "delete_event") { method = "DELETE"; gurl = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(params.calendarId)}/events/${encodeURIComponent(params.eventId)}`; }
+    else return Response.json({ error: "accion desconocida" }, { status: 400 });
+    const gr = await fetch(gurl, { method, headers: { Authorization: `Bearer ${at}`, "content-type": "application/json" }, body: payload ? JSON.stringify(payload) : undefined });
+    const txt = await gr.text();
+    return new Response(txt || "{}", { status: gr.status, headers: { "content-type": "application/json" } });
+  }
+  return new Response("sala-calendar ok");
+});

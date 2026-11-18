@@ -164,6 +164,7 @@ function vAgenda() {
   }
   if (cal.detail) out += vAgendaDetail();
   if (cal.form) out += vAgendaForm();
+  out += `<div class="ag-privacy"><a href="/privacy.html">Privacidad</a></div>`;
   return out;
 }
 
@@ -344,7 +345,8 @@ function vHoy() {
       <div class="prev">${(esc(n.body)||'').slice(0,110)}</div>
       <div class="foot">${new Date(n.updated_at).toLocaleDateString('es-ES',{day:'numeric',month:'short'})}${n.tags?` · <span class="tag">${esc(n.tags)}</span>`:''}</div></div>`).join('')
     : `<div class="empty">${ic('note',26)}<div>Sin apuntes todavía. Empieza uno desde Apuntes.</div></div>`}
-  </div>`;
+  </div>
+  <div class="ag-privacy rise" style="animation-delay:.34s"><a href="/privacy.html">Privacidad</a></div>`;
 }
 
 function vTareas() {
