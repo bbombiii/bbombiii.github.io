@@ -340,7 +340,7 @@ function vKana() {
       .sort((a,b) => b[1].fail - a[1].fail || new Date(b[1].last_fail||0) - new Date(a[1].last_fail||0)).slice(0,8);
     return head + `
     <div class="card rise"><b>Elige qué practicar</b>
-      <div class="chips" style="margin-top:12px">${KANA_GROUPS.map(g => `<div class="chip ${kz.sel.includes(g.id)?'on':''}" data-kg="${g.id}">${esc(g.name)}</div>`).join('')}</div>
+      <div class="chips" style="margin-top:12px;flex-wrap:wrap">${KANA_GROUPS.map(g => `<div class="chip ${kz.sel.includes(g.id)?'on':''}" data-kg="${g.id}">${esc(g.name)}</div>`).join('')}</div>
       <button class="btn primary block" id="kz-start" style="margin-top:16px" ${total?'':'disabled'}>Empezar · ${total} kana</button>
     </div>
     ${fails.length ? `<div class="sec rise"><h2>Dónde fallas</h2></div>
