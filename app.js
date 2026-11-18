@@ -826,7 +826,7 @@ function vCuenta() {
   <div class="sec rise" style="animation-delay:.1s"><h2>Info</h2></div>
   <div class="card rise" style="animation-delay:.12s">
     <div class="row"><b class="grow" style="font-size:14px">Mi Sala</b><span class="pill acc">V1.0.1</span></div>
-    <div class="mut small" style="margin-top:6px">Tus peticiones e imágenes son privadas: solo las ves tú y solo se usan para personalizar tu Sala.</div>
+    <div class="mut small" style="margin-top:6px">Tus peticiones e imágenes son privadas: las ves tú y Helena, tu asistente, y solo se usan para personalizar tu Sala.</div>
   </div>`;
 }
 
@@ -837,8 +837,10 @@ function openCuenta() {
     const ta = document.getElementById('pers-text');
     const texto = ta.value.trim();
     if (!texto) return;
-    const { data } = await sb.from('personalizacion').insert({ tipo:'prompt', texto }).select().single();
-    if (data) { cache.pers.unshift(data); ta.value=''; openCuenta(); }
+    const msg = document.getElementById('pers-upmsg');
+    const { data, error } = await sb.from('personalizacion').insert({ tipo:'prompt', texto }).select().single();
+    if (error || !data) { msg.textContent = 'No se pudo guardar la petición. Inténtalo de nuevo.'; return; }
+    cache.pers.unshift(data); ta.value=''; msg.textContent=''; openCuenta();
   };
   const fileInp = document.getElementById('pers-file');
   document.getElementById('pers-img-btn').onclick = () => fileInp.click();
@@ -846,22 +848,29 @@ function openCuenta() {
     const f = fileInp.files && fileInp.files[0];
     if (!f) return;
     const msg = document.getElementById('pers-upmsg');
+    if (!f.type || !f.type.startsWith('image/')) { msg.textContent = 'Solo se admiten imágenes (PNG, JPG, WebP o GIF).'; fileInp.value=''; return; }
+    if (f.size > 5*1024*1024) { msg.textContent = 'La imagen pesa más de 5 MB. Prueba con una más ligera.'; fileInp.value=''; return; }
     msg.textContent = 'Subiendo imagen...';
     const safe = f.name.replace(/[^a-zA-Z0-9._-]/g,'_').slice(-60);
     const path = session.user.id + '/' + Date.now() + '-' + safe;
     const { error: upErr } = await sb.storage.from('personalizacion').upload(path, f, { cacheControl:'3600', upsert:false });
-    if (upErr) { msg.textContent = 'No se pudo subir la imagen.'; return; }
-    const { data } = await sb.from('personalizacion').insert({ tipo:'imagen', imagen_path:path, texto:f.name }).select().single();
-    if (data) cache.pers.unshift(data);
+    if (upErr) { msg.textContent = 'No se pudo subir la imagen.'; fileInp.value=''; return; }
+    const { data, error: insErr } = await sb.from('personalizacion').insert({ tipo:'imagen', imagen_path:path, texto:f.name }).select().single();
+    if (insErr || !data) {
+      await sb.storage.from('personalizacion').remove([path]);
+      msg.textContent = 'No se pudo registrar la imagen. Inténtalo de nuevo.'; fileInp.value=''; return;
+    }
+    cache.pers.unshift(data);
     const { data: su } = await sb.storage.from('personalizacion').createSignedUrl(path, 3600);
     if (su && su.signedUrl) persSigned[path] = su.signedUrl;
-    msg.textContent = '';
+    msg.textContent = ''; fileInp.value='';
     openCuenta();
   };
   app.querySelectorAll('[data-pers-activa]').forEach(b => b.onclick = async () => {
     const id = b.dataset.persActiva;
-    await sb.from('personalizacion').update({ activa:false, updated_at:new Date().toISOString() }).eq('activa', true);
-    await sb.from('personalizacion').update({ activa:true, updated_at:new Date().toISOString() }).eq('id', id);
+    const { error: e1 } = await sb.from('personalizacion').update({ activa:false, updated_at:new Date().toISOString() }).eq('activa', true);
+    const { error: e2 } = await sb.from('personalizacion').update({ activa:true, updated_at:new Date().toISOString() }).eq('id', id);
+    if (e1 || e2) { alert('No se pudo marcar la referencia. Inténtalo de nuevo.'); return; }
     cache.pers.forEach(p => p.activa = (p.id===id));
     openCuenta();
   });
@@ -869,9 +878,11 @@ function openCuenta() {
     if (!confirm('¿Borrar esta petición?')) return;
     const id = b.dataset.persDel;
     const p = cache.pers.find(x=>x.id===id);
-    await sb.from('personalizacion').delete().eq('id', id);
     if (p && p.imagen_path) await sb.storage.from('personalizacion').remove([p.imagen_path]);
+    const { error: delErr } = await sb.from('personalizacion').delete().eq('id', id);
+    if (delErr) { alert('No se pudo borrar la petición. Inténtalo de nuevo.'); return; }
     cache.pers = cache.pers.filter(x=>x.id!==id);
+    delete persSigned[p && p.imagen_path];
     openCuenta();
   });
 }
