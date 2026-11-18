@@ -115,6 +115,7 @@ async function agendaLoad(withCalendars) {
   }));
   cal.events = res.flat().sort((a,b) => (a.start.dateTime || a.start.date) > (b.start.dateTime || b.start.date) ? 1 : -1);
   cal.busy = false; render();
+  if (cal.weekOff === 0) requestAnimationFrame(() => { const t = document.querySelector('.ag-today'); if (t) t.scrollIntoView({ block: 'start', behavior: 'smooth' }); });
 }
 
 function vAgenda() {
