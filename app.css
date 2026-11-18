@@ -37,7 +37,7 @@ body.theme-onepiece::after{content:"";position:fixed;inset:0;z-index:0;pointer-e
 main{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:calc(8px + env(safe-area-inset-top,0px)) 20px 16px}
 
 /* --- cabecera --- */
-header.top{padding:22px 0 6px;display:flex;align-items:flex-start;gap:12px}
+header.top{padding:22px 0 6px;display:flex;align-items:center;gap:12px}
 header.top .grow{flex:1;min-width:0}
 .date-cap{font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--acc)}
 h1{font-size:28px;font-weight:800;letter-spacing:-.02em;margin-top:2px}
