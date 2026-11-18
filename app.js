@@ -3,7 +3,7 @@ import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js
 const CFG = window.SALA_CONFIG || {};
 const app = document.getElementById('app');
 let sb = null, session = null, tab = 'hoy';
-let cache = { tasks: [], notes: [], topics: [], lessons: [], resources: [], results: [] };
+let cache = { tasks: [], notes: [], topics: [], lessons: [], resources: [], results: [], testAttempts: [] };
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const h = html => { app.innerHTML = html; };
@@ -32,7 +32,7 @@ const IC = {
 };
 const ic = (n, s=20, sw=1.8) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round">${IC[n]||''}</svg>`;
 
-const TABS = [['hoy','home','Hoy'],['tareas','squareCheck','Tareas'],['apuntes','note','Apuntes'],['estudios','cap','Estudios'],['idiomas','globe','Idiomas']];
+const TABS = [['hoy','home','Hoy'],['tareas','squareCheck','Tareas'],['apuntes','note','Apuntes'],['estudios','cap','Estudios'],['tests','target','Tests'],['idiomas','globe','Idiomas']];
 const AREA_DOT = {personal:'area-personal',trabajo:'area-trabajo',estudios:'area-estudios'};
 
 function shell(content) {
@@ -46,15 +46,16 @@ const header = (title, sub, extra='') =>
   `<header class="top rise"><div class="grow"><h1 class="small-h">${title}</h1>${sub?`<div class="sub">${sub}</div>`:''}</div>${extra}</header>`;
 
 async function loadAll() {
-  const [t,n,tp,l,r,res] = await Promise.all([
+  const [t,n,tp,l,r,res,ta] = await Promise.all([
     sb.from('tasks').select('*').order('created_at',{ascending:false}),
     sb.from('notes').select('*').order('updated_at',{ascending:false}),
     sb.from('topics').select('*').order('ord'),
     sb.from('lessons').select('*').order('day'),
     sb.from('resources').select('*').order('ord'),
     sb.from('quiz_results').select('*'),
+    sb.from('test_attempts').select('*').order('created_at',{ascending:false}),
   ]);
-  cache = { tasks:t.data||[], notes:n.data||[], topics:tp.data||[], lessons:l.data||[], resources:r.data||[], results:res.data||[] };
+  cache = { tasks:t.data||[], notes:n.data||[], topics:tp.data||[], lessons:l.data||[], resources:r.data||[], results:res.data||[], testAttempts:ta.data||[] };
 }
 
 const examInfo = () => {
@@ -236,6 +237,172 @@ function vLesson(l) {
   ${res?`<div class="card mt rise"><div class="row"><span class="link-ic" style="color:var(--ok)">${ic('check',20)}</span><div class="grow"><b>Ya la completaste: ${res.score}/${res.total}</b></div></div></div>`:''}`;
 }
 
+/* ---------- Tests SMR ---------- */
+const BANKS = [
+  ...[1,2,3,4,5,6].map(i => ({bank:`SOR RA${i}`, subject:'SOR'})),
+  ...[1,2,3,4,5,6,7,8].map(i => ({bank:`Servicios RA${i}`, subject:'Servicios', comp:i===7})),
+  ...[1,2,3,4,5].map(i => ({bank:`IPE II RA${i}`, subject:'IPE II'})),
+];
+const bankBadge = s => s==='Servicios' ? 'SRV' : s==='IPE II' ? 'IPE' : 'SOR';
+const bankStats = bank => {
+  const l = cache.testAttempts.filter(a => a.bank===bank);
+  return l.length ? { n:l.length, best:Math.max(...l.map(a=>Math.round(100*a.score/a.total))), last:l[0] } : null;
+};
+
+function vTests() {
+  const subs = [...new Set(BANKS.map(b=>b.subject))];
+  return `${header('Tests','Bancos SMR de tus PDF: un test de 100 por tema, con corrección al momento')}
+  ${subs.map((s,si) => `<div class="mod-head rise" style="animation-delay:${.05+si*.06}s"><h2>${esc(s)}</h2><span class="count">${BANKS.filter(b=>b.subject===s).length} temas</span></div>` +
+    BANKS.filter(b=>b.subject===s).map((b,i) => {
+      const st = bankStats(b.bank);
+      return `<div class="card clickable rise" style="animation-delay:${.08+si*.06+i*.03}s" data-bank="${esc(b.bank)}"><div class="lesson-row">
+      <span class="lang-badge ${b.subject==='SOR'?'en':'ja'}">${bankBadge(b.subject)}</span>
+      <div class="grow"><b>${esc(b.bank)}</b>${b.comp?' <span class="pill warn">Complementario</span>':''}
+      <div class="meta">${st ? `${st.n} intento${st.n===1?'':'s'} · mejor nota ${st.best}%` : 'Sin intentos todavía'}</div></div>
+      ${ic('chev',16)}</div></div>`;
+    }).join('')).join('')}
+  <div class="mut small center mt">Las preguntas y respuestas vienen de tus PDF de estudio (bancos por RA), tal cual.</div>`;
+}
+
+function vTestBank(b) {
+  const ats = cache.testAttempts.filter(a=>a.bank===b.bank);
+  const st = bankStats(b.bank);
+  const last = st ? st.last : null;
+  const fails = last ? last.total - last.score : 0;
+  return `<header class="top rise"><button class="icon-btn" data-back>${ic('back',18)}</button>
+  <div class="grow"><h1 class="small-h">${esc(b.bank)}</h1>
+  <div class="sub">${esc(b.subject)} · 100 preguntas${b.comp?' · banco complementario':''}</div></div></header>
+  <div class="tiles rise" style="animation-delay:.05s">
+    <div class="tile"><div class="lab">${ic('target',14)} Intentos</div><div class="big">${st?st.n:0}</div></div>
+    <div class="tile"><div class="lab">${ic('check',14)} Mejor nota</div><div class="big">${st?st.best+'<small>%</small>':'—'}</div></div>
+  </div>
+  <button class="btn primary block rise" style="animation-delay:.08s" id="bt-start">${ic('play',17,2)} Empezar test de 100</button>
+  ${fails>0 ? `<button class="btn block rise" style="animation-delay:.11s" id="bt-failed">${ic('sparkle',17,1.8)} Repasar las ${fails} falladas del último intento</button>` : ''}
+  <div class="sec rise" style="animation-delay:.14s"><h2>Historial</h2><span class="count">${ats.length}</span></div>
+  ${ats.length ? ats.slice(0,10).map((a,i)=>{
+      const pct = Math.round(100*a.score/a.total);
+      return `<div class="card hist-row rise" style="animation-delay:${.16+i*.04}s"><div class="grow"><b>${a.score}/${a.total}</b><span class="mut small"> · ${new Date(a.created_at).toLocaleDateString('es-ES',{day:'numeric',month:'short'})} ${new Date(a.created_at).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'})}</span></div><span class="pill ${pct>=80?'ok':pct>=50?'acc':'warn'}">${pct}%</span></div>`;
+    }).join('') : '<div class="empty">Aún no hay intentos. El primero empieza arriba.</div>'}`;
+}
+
+let trun = null;
+
+async function startTestRun(b, onlyFailed) {
+  h(shell(`${header(esc(b.bank),'Cargando preguntas...')}`)); bindNav();
+  app.querySelector('[data-back]').onclick = () => openBank(b);
+  const { data } = await sb.from('test_questions').select('*').eq('bank', b.bank).order('ord');
+  let list = data || [];
+  if (!list.length) return openBank(b);
+  if (onlyFailed) {
+    const last = (cache.testAttempts.find(a=>a.bank===b.bank));
+    if (!last) return openBank(b);
+    const { data:ans } = await sb.from('test_answers').select('question_id').eq('attempt_id', last.id).eq('correct', false);
+    const ids = new Set((ans||[]).map(x=>x.question_id));
+    list = list.filter(q=>ids.has(q.id));
+    if (!list.length) return openBank(b);
+  }
+  trun = { bank:b, list, i:0, answers:[], locked:false };
+  renderRun();
+}
+
+function renderRun() {
+  const q = trun.list[trun.i];
+  const n = trun.list.length;
+  const num = trun.i + 1;
+  h(shell(`
+  <header class="top rise"><button class="icon-btn" data-back>${ic('back',18)}</button>
+    <div class="grow"><h1 class="small-h">${esc(trun.bank.bank)}</h1>
+    <div class="sub">Pregunta ${num} de ${n}</div></div>
+    <button class="btn ghost" id="run-end">Terminar y corregir</button></header>
+  <div class="bar rise" style="animation-delay:.02s;margin:6px 0 16px"><i style="width:${Math.round(100*(num-1)/n)}%"></i></div>
+  <div class="card rise" style="animation-delay:.04s">
+    <div class="qnum">${esc(trun.bank.bank)} · ${q.qid ? `<span class="mut small">${esc(q.qid)}</span>` : ''}</div>
+    <div class="qtext">${esc(q.question)}</div>
+    <div class="mt" id="opts">
+      ${q.options.map((o,j)=>`<button class="quiz-opt opt" data-opt="${j}"><span class="opt-letter">${'ABCD'[j]}</span><span>${esc(o)}</span></button>`).join('')}
+    </div>
+    <div id="expl"></div>
+  </div>`)); bindNav();
+  app.querySelector('[data-back]').onclick = () => openBank(trun.bank);
+  document.getElementById('run-end').onclick = () => {
+    if (!trun.answers.length) return openBank(trun.bank);
+    if (confirm(`¿Corregir ya con las ${trun.answers.length} respondidas?`)) finishRun();
+  };
+  app.querySelectorAll('#opts .quiz-opt').forEach(btn => btn.onclick = () => {
+    if (trun.locked) return;
+    trun.locked = true;
+    const chosen = +btn.dataset.opt;
+    const ok = chosen === q.correct;
+    trun.answers.push({ question_id:q.id, chosen, correct:ok });
+    app.querySelectorAll('#opts .quiz-opt').forEach((b,j)=>{
+      b.disabled = true;
+      if (j===q.correct) b.classList.add('right');
+      else if (b===btn) b.classList.add('wrong');
+    });
+    document.getElementById('expl').innerHTML =
+      `<div class="expl-box ${ok?'ok':'bad'}"><b>${ok?'¡Correcta!':'No es esa.'}</b> ${esc(q.explanation||'')}</div>
+       <button class="btn primary block" id="run-next">${trun.i+1<trun.list.length?'Siguiente':'Ver resultado'}</button>`;
+    document.getElementById('run-next').onclick = () => {
+      trun.i++; trun.locked = false;
+      if (trun.i < trun.list.length) renderRun(); else finishRun();
+    };
+    const main = app.querySelector('main');
+    if (main) main.scrollTop = main.scrollHeight;
+  });
+}
+
+async function finishRun() {
+  const total = trun.answers.length;
+  const score = trun.answers.filter(a=>a.correct).length;
+  h(shell(`${header(esc(trun.bank.bank),'Guardando resultado...')}`)); bindNav();
+  let att = null;
+  const { data:attData } = await sb.from('test_attempts').insert({ bank:trun.bank.bank, total, score }).select().single();
+  att = attData;
+  if (att) {
+    const rows = trun.answers.map(a=>({ attempt_id:att.id, question_id:a.question_id, chosen:a.chosen, correct:a.correct }));
+    if (rows.length) await sb.from('test_answers').insert(rows);
+    cache.testAttempts.unshift(att);
+  }
+  renderResult(score, total, !!att);
+}
+
+function renderResult(score, total, saved) {
+  const pct = total ? Math.round(100*score/total) : 0;
+  const byId = Object.fromEntries(trun.list.map(q=>[q.id,q]));
+  const fails = trun.answers.filter(a=>!a.correct);
+  h(shell(`
+  <header class="top rise"><div class="grow"><h1 class="small-h">${esc(trun.bank.bank)}</h1>
+  <div class="sub">Resultado del test</div></div></header>
+  <div class="card center rise" style="animation-delay:.04s">
+    <div style="font-size:38px;font-weight:800">${score}/${total}</div>
+    <div class="mt"><span class="pill ${pct>=80?'ok':pct>=50?'acc':'warn'}">${pct}%</span></div>
+    <div class="mut small mt">${saved ? 'Guardado en tu historial' : 'No se pudo guardar en el historial'}</div>
+  </div>
+  ${fails.length ? `<div class="sec rise" style="animation-delay:.08s"><h2>Falladas (${fails.length})</h2></div>` +
+    fails.map((a,i)=>{ const q = byId[a.question_id]; if(!q) return ''; return `
+    <div class="card fail-q rise" style="animation-delay:${.1+i*.03}s">
+      <div class="qtext small-q">${esc(q.question)}</div>
+      <div class="fail-line bad">Tu respuesta: ${esc(q.options[a.chosen])}</div>
+      <div class="fail-line good">Correcta: ${esc(q.options[q.correct])}</div>
+      ${q.explanation?`<div class="mut small mt">${esc(q.explanation)}</div>`:''}
+    </div>`;}).join('') : `<div class="card center rise" style="animation-delay:.08s"><b>¡Pleno!</b><div class="mut small mt">Ningún fallo en este test 🎉</div></div>`}
+  <div class="row mt">
+    ${fails.length ? `<button class="btn grow" id="res-failed">Repetir falladas</button>` : ''}
+    <button class="btn primary grow" id="res-back">Volver</button>
+  </div>`)); bindNav();
+  document.getElementById('res-back').onclick = () => openBank(trun.bank);
+  const rf = document.getElementById('res-failed');
+  if (rf) rf.onclick = () => startTestRun(trun.bank, true);
+}
+
+function openBank(b) {
+  h(shell(vTestBank(b))); bindNav();
+  app.querySelector('[data-back]').onclick = () => { tab='tests'; render(); };
+  document.getElementById('bt-start').onclick = () => startTestRun(b, false);
+  const bf = document.getElementById('bt-failed');
+  if (bf) bf.onclick = () => startTestRun(b, true);
+}
+
 /* ---------- Lógica ---------- */
 
 async function render() {
@@ -245,6 +412,7 @@ async function render() {
   else if (tab==='tareas') content = vTareas();
   else if (tab==='apuntes') content = vApuntes();
   else if (tab==='estudios') content = vEstudios();
+  else if (tab==='tests') content = vTests();
   else if (tab==='idiomas') content = vIdiomas();
   h(shell(content)); bindNav(); bindActions();
   app.querySelector('main').scrollTop = 0;
@@ -286,6 +454,7 @@ function bindActions() {
   if (newNote) newNote.onclick = () => openNote(null);
   app.querySelectorAll('[data-note]').forEach(b => b.onclick = () => openNote(cache.notes.find(x=>x.id===b.dataset.note)));
   app.querySelectorAll('[data-lesson]').forEach(b => b.onclick = () => openLesson(cache.lessons.find(x=>x.id===b.dataset.lesson)));
+  app.querySelectorAll('[data-bank]').forEach(b => b.onclick = () => openBank(BANKS.find(x=>x.bank===b.dataset.bank)));
 }
 
 function openNote(n) {

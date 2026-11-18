@@ -210,3 +210,20 @@ a{color:var(--acc)}
 }
 
 /* redeploy: noop */
+
+/* --- tests SMR --- */
+.qnum{font-size:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--mut);margin-bottom:8px}
+.qtext{font-size:17px;font-weight:600;line-height:1.45;letter-spacing:-.01em}
+.qtext.small-q{font-size:15px;margin-bottom:10px}
+.opt{display:flex;gap:11px;align-items:flex-start}
+.opt-letter{flex:none;width:24px;height:24px;border-radius:8px;background:rgba(255,255,255,.06);display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:700;color:var(--mut);margin-top:-1px}
+.quiz-opt.right .opt-letter{background:var(--ok);color:#06281c}
+.quiz-opt.wrong .opt-letter{background:var(--danger);color:#3d0a0a}
+.expl-box{margin-top:14px;margin-bottom:14px;font-size:14px;line-height:1.55;color:var(--mut);background:var(--surface2);border-radius:var(--rad-s);padding:12px 14px;border-left:3px solid var(--acc)}
+.expl-box.ok{border-left-color:var(--ok)}
+.expl-box.bad{border-left-color:var(--danger)}
+.expl-box b{color:var(--txt)}
+.hist-row{display:flex;align-items:center;gap:10px;padding:13px 16px}
+.fail-q .fail-line{font-size:14px;padding:6px 10px;border-radius:10px;margin-top:4px}
+.fail-line.bad{background:var(--danger-soft);color:var(--danger)}
+.fail-line.good{background:var(--ok-soft);color:var(--ok)}
