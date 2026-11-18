@@ -29,7 +29,11 @@ if (p.get('error')) {
   sub.textContent = 'Google respondió: ' + p.get('error');
 } else if (!p.get('code')) {
   msg.textContent = 'Falta el código de autorización';
+} else if (!p.get('state') || p.get('state') !== localStorage.getItem('salaCalState')) {
+  msg.textContent = 'Estado no válido';
+  sub.innerHTML = 'La conexión no vino de esta Sala. Repítela desde la pestaña Agenda.';
 } else {
+  localStorage.removeItem('salaCalState');
   const { data: { session } } = await sb.auth.getSession();
   if (!session) {
     msg.textContent = 'Inicia sesión primero';

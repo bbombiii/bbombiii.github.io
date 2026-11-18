@@ -75,9 +75,14 @@ const langProgress = () => {
 /* ---------- Agenda (Google Calendar via RPC proxy en Postgres) ---------- */
 const GCAL_CID = '767769165702-btgifgeq5iirc8gct7mm5r9mmpm978u1.apps.googleusercontent.com';
 const GCAL_SCOPES = 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.calendarlist.readonly';
-const oauthUrl = () => 'https://accounts.google.com/o/oauth2/v2/auth?client_id=' + GCAL_CID +
-  '&redirect_uri=' + encodeURIComponent(location.origin + '/oauth-callback.html') +
-  '&response_type=code&scope=' + encodeURIComponent(GCAL_SCOPES) + '&access_type=offline&prompt=consent';
+const oauthUrl = () => {
+  const st = crypto.randomUUID();
+  localStorage.setItem('salaCalState', st);
+  return 'https://accounts.google.com/o/oauth2/v2/auth?client_id=' + GCAL_CID +
+    '&redirect_uri=' + encodeURIComponent(location.origin + '/oauth-callback.html') +
+    '&response_type=code&scope=' + encodeURIComponent(GCAL_SCOPES) +
+    '&access_type=offline&prompt=consent&state=' + encodeURIComponent(st);
+};
 let cal = { connected: null, calendars: [], sel: JSON.parse(localStorage.getItem('salaCalSel') || 'null'), weekOff: 0, events: [], busy: false, detail: null, form: null };
 
 async function calApi(action, payload = {}) {
@@ -175,7 +180,6 @@ function vAgendaDetail() {
     ${ev.description ? `<div class="ag-desc">${esc(ev.description)}</div>` : ''}
     <div class="ag-actions">
       <button class="btn" id="ag-edit">Editar</button>
-      <button class="btn danger-ghost" id="ag-del">Eliminar</button>
       <button class="btn ghost" id="ag-close">Cerrar</button>
     </div></div></div>`;
 }
@@ -243,14 +247,6 @@ function bindAgenda() {
       end: ev.end.dateTime ? new Date(ev.end.dateTime).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit',hour12:false}) : '10:00',
       allDay: !ev.start.dateTime, description: ev.description || '' };
     cal.detail = null; render();
-  };
-  const del = document.getElementById('ag-del');
-  if (del) del.onclick = async () => {
-    const ev = cal.detail;
-    if (!confirm('¿Eliminar "' + (ev.summary || 'evento') + '"?')) return;
-    del.disabled = true;
-    await calApi('delete_event', { calendarId: ev._cal.id, eventId: ev.id });
-    cal.detail = null; agendaLoad(false);
   };
   const save = document.getElementById('ag-save');
   if (save) save.onclick = async () => {
