@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Conectando calendario</title>
+<style>
+  body{font-family:system-ui,-apple-system,sans-serif;background:#0f1115;color:#e8e8ec;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:20px;box-sizing:border-box}
+  .wrap{max-width:420px;text-align:center}
+  .sub{color:#9aa0aa;font-size:14px;margin-top:8px}
+  a{color:#7aa2ff}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h2 id="msg">Conectando…</h2>
+  <div class="sub" id="sub"></div>
+</div>
+<script src="config.js"></script>
+<script type="module">
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+const CFG = window.SALA_CONFIG;
+const sb = createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY);
+const msg = document.getElementById('msg');
+const sub = document.getElementById('sub');
+const p = new URLSearchParams(location.search);
+if (p.get('error')) {
+  msg.textContent = 'No se pudo conectar';
+  sub.textContent = 'Google respondió: ' + p.get('error');
+} else if (!p.get('code')) {
+  msg.textContent = 'Falta el código de autorización';
+} else {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) {
+    msg.textContent = 'Inicia sesión primero';
+    sub.innerHTML = 'Entra en <a href="/">la Sala</a> con tu contraseña y repite la conexión desde Agenda.';
+  } else {
+    const { data, error } = await sb.rpc('calendar_oauth_callback', { code: p.get('code') });
+    if (error) { msg.textContent = 'Error al conectar'; sub.textContent = error.message; }
+    else if (String(data).startsWith('conectado')) {
+      msg.textContent = 'Calendario conectado';
+      sub.textContent = 'Volviendo a la Sala…';
+      setTimeout(() => { location.href = '/'; }, 1400);
+    } else {
+      msg.textContent = 'No se pudo conectar';
+      sub.textContent = String(data);
+    }
+  }
+}
+</script>
+</body>
+</html>

@@ -32,7 +32,7 @@ const IC = {
 };
 const ic = (n, s=20, sw=1.8) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round">${IC[n]||''}</svg>`;
 
-const TABS = [['hoy','home','Hoy'],['tareas','squareCheck','Tareas'],['apuntes','note','Apuntes'],['estudios','cap','Estudios'],['tests','target','Tests'],['idiomas','globe','Idiomas']];
+const TABS = [['hoy','home','Hoy'],['agenda','calendar','Agenda'],['tareas','squareCheck','Tareas'],['apuntes','note','Apuntes'],['estudios','cap','Estudios'],['tests','target','Tests'],['idiomas','globe','Idiomas']];
 const AREA_DOT = {personal:'area-personal',trabajo:'area-trabajo',estudios:'area-estudios'};
 
 function shell(content) {
@@ -70,6 +70,214 @@ const langProgress = () => {
 };
 
 /* ---------- Vistas ---------- */
+
+
+/* ---------- Agenda (Google Calendar via RPC proxy en Postgres) ---------- */
+const GCAL_CID = '767769165702-btgifgeq5iirc8gct7mm5r9mmpm978u1.apps.googleusercontent.com';
+const GCAL_SCOPES = 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.calendarlist.readonly';
+const oauthUrl = () => 'https://accounts.google.com/o/oauth2/v2/auth?client_id=' + GCAL_CID +
+  '&redirect_uri=' + encodeURIComponent(location.origin + '/oauth-callback.html') +
+  '&response_type=code&scope=' + encodeURIComponent(GCAL_SCOPES) + '&access_type=offline&prompt=consent';
+let cal = { connected: null, calendars: [], sel: JSON.parse(localStorage.getItem('salaCalSel') || 'null'), weekOff: 0, events: [], busy: false, detail: null, form: null };
+
+async function calApi(action, payload = {}) {
+  const { data, error } = await sb.rpc('calendar_api', { action, payload });
+  if (error) return { error: error.message };
+  if (data && data.error) return data;
+  return (data && data.data !== undefined) ? data.data : data;
+}
+function calMonday(off = 0) { const d = new Date(); const dow = (d.getDay() + 6) % 7; d.setDate(d.getDate() - dow + off * 7); d.setHours(0,0,0,0); return d; }
+const calDayKey = d => d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+const DOW = ['lunes','martes','miércoles','jueves','viernes','sábado','domingo'];
+const evStart = ev => ev.start.dateTime ? new Date(ev.start.dateTime) : new Date(ev.start.date + 'T00:00:00');
+
+async function agendaLoad(withCalendars) {
+  if (cal.busy) return; cal.busy = true;
+  if (withCalendars || cal.connected === null) {
+    const r = await calApi('list_calendars');
+    if (r.error === 'calendar_no_conectado') { cal.connected = false; cal.busy = false; render(); return; }
+    if (r.error) { cal.connected = 'error'; cal.errMsg = r.error; cal.busy = false; render(); return; }
+    cal.connected = true;
+    cal.calendars = (r.items || []).map(c => ({ id: c.id, name: c.summary, color: c.backgroundColor || '#7aa2ff', primary: !!c.primary }));
+    if (!cal.sel) cal.sel = cal.calendars.map(c => c.id);
+    localStorage.setItem('salaCalSel', JSON.stringify(cal.sel));
+  }
+  const m = calMonday(cal.weekOff), e = new Date(m); e.setDate(e.getDate() + 7);
+  const selCals = cal.calendars.filter(c => cal.sel.includes(c.id));
+  const res = await Promise.all(selCals.map(async c => {
+    const r = await calApi('list_events', { calendarId: c.id, timeMin: m.toISOString(), timeMax: e.toISOString() });
+    return (r.items || []).map(ev => ({ ...ev, _cal: c }));
+  }));
+  cal.events = res.flat().sort((a,b) => (a.start.dateTime || a.start.date) > (b.start.dateTime || b.start.date) ? 1 : -1);
+  cal.busy = false; render();
+}
+
+function vAgenda() {
+  if (cal.connected === null) { agendaLoad(true); return header('Agenda', 'Tu Google Calendar') + `<div class="card rise"><div class="sub">Cargando…</div></div>`; }
+  if (cal.connected === 'error') return header('Agenda', 'Tu Google Calendar') +
+    `<div class="card rise"><h3>Error</h3><div class="sub">${esc(cal.errMsg || 'desconocido')}</div>
+     <button class="btn block" id="ag-retry" style="margin-top:12px">Reintentar</button></div>`;
+  if (cal.connected === false) return header('Agenda', 'Tu Google Calendar') +
+    `<div class="card rise"><h3>Conecta tu calendario</h3>
+     <div class="sub">Ve y gestiona los eventos de tus calendarios de Google sin salir de la Sala. Solo tú ves esto.</div>
+     <button class="btn primary block" id="ag-connect" style="margin-top:14px">Conectar Google Calendar</button></div>`;
+
+  const m = calMonday(cal.weekOff);
+  const days = Array.from({length: 7}, (_, i) => { const d = new Date(m); d.setDate(d.getDate() + i); return d; });
+  const range = days[0].toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }) + ' - ' + days[6].toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+  const chips = cal.calendars.map(c =>
+    `<button class="chip ag-chip ${cal.sel.includes(c.id) ? 'on' : ''}" data-calchip="${esc(c.id)}">
+       <span class="ag-dot" style="background:${esc(c.color)}"></span>${esc(c.name)}</button>`).join('');
+  let out = header('Agenda', range,
+    `<button class="icon-btn" id="ag-new" title="Nuevo evento">${ic('plus')}</button>`);
+  out += `<div class="ag-weeknav rise">
+      <button class="icon-btn" id="ag-prev">${ic('back')}</button>
+      <button class="btn ghost" id="ag-today">Hoy</button>
+      <button class="icon-btn" id="ag-next" style="transform:scaleX(-1)">${ic('back')}</button>
+    </div>`;
+  out += `<div class="chips ag-chips rise">${chips}</div>`;
+  const todayK = calDayKey(new Date());
+  for (const d of days) {
+    const k = calDayKey(d);
+    const evs = cal.events.filter(ev => calDayKey(evStart(ev)) === k);
+    if (!evs.length && k !== todayK) continue;
+    out += `<div class="ag-day rise ${k === todayK ? 'ag-today' : ''}">
+      <div class="ag-dayhead">${DOW[(d.getDay()+6)%7]} <span>${d.getDate()}</span></div>
+      ${evs.length ? evs.map(ev => {
+        const time = ev.start.dateTime
+          ? new Date(ev.start.dateTime).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}) +
+            ' - ' + new Date(ev.end.dateTime).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'})
+          : 'Todo el día';
+        return `<button class="ag-ev" data-ev="${esc(ev._cal.id)}|${esc(ev.id)}">
+          <span class="ag-dot" style="background:${esc(ev._cal.color)}"></span>
+          <span class="ag-ev-main"><b>${esc(ev.summary || '(sin título)')}</b><small>${time} · ${esc(ev._cal.name)}</small></span>
+          ${ic('chev', 16)}</button>`;
+      }).join('') : '<div class="sub" style="padding:2px 4px 8px">Sin eventos</div>'}
+    </div>`;
+  }
+  if (cal.detail) out += vAgendaDetail();
+  if (cal.form) out += vAgendaForm();
+  return out;
+}
+
+function vAgendaDetail() {
+  const ev = cal.detail;
+  const when = ev.start.dateTime
+    ? evStart(ev).toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long'}) + ', ' +
+      new Date(ev.start.dateTime).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}) + ' - ' +
+      new Date(ev.end.dateTime).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'})
+    : evStart(ev).toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long'}) + ' (todo el día)';
+  return `<div class="ag-overlay" id="ag-overlay"><div class="card ag-panel rise">
+    <h3>${esc(ev.summary || '(sin título)')}</h3>
+    <div class="sub">${when}</div>
+    <div class="sub" style="margin-top:4px"><span class="ag-dot" style="background:${esc(ev._cal.color)}"></span> ${esc(ev._cal.name)}</div>
+    ${ev.location ? `<div class="sub" style="margin-top:4px">${esc(ev.location)}</div>` : ''}
+    ${ev.description ? `<div class="ag-desc">${esc(ev.description)}</div>` : ''}
+    <div class="ag-actions">
+      <button class="btn" id="ag-edit">Editar</button>
+      <button class="btn danger-ghost" id="ag-del">Eliminar</button>
+      <button class="btn ghost" id="ag-close">Cerrar</button>
+    </div></div></div>`;
+}
+
+function vAgendaForm() {
+  const f = cal.form;
+  const opts = cal.calendars.map(c => `<option value="${esc(c.id)}" ${c.id===f.calendarId?'selected':''}>${esc(c.name)}</option>`).join('');
+  return `<div class="ag-overlay" id="ag-overlay"><div class="card ag-panel rise">
+    <h3>${f.id ? 'Editar evento' : 'Nuevo evento'}</h3>
+    <input class="inp" id="agf-title" placeholder="Título" value="${esc(f.summary || '')}">
+    <select class="inp" id="agf-cal">${opts}</select>
+    <input class="inp" id="agf-date" type="date" value="${esc(f.date)}">
+    <label class="ag-allday"><input type="checkbox" id="agf-allday" ${f.allDay ? 'checked' : ''}> Todo el día</label>
+    <div class="ag-times ${f.allDay ? 'ag-hidden' : ''}" id="agf-times">
+      <input class="inp" id="agf-start" type="time" value="${esc(f.start || '09:00')}">
+      <input class="inp" id="agf-end" type="time" value="${esc(f.end || '10:00')}">
+    </div>
+    <textarea class="inp" id="agf-desc" placeholder="Descripción (opcional)">${esc(f.description || '')}</textarea>
+    <div class="ag-actions">
+      <button class="btn primary" id="ag-save">${f.id ? 'Guardar cambios' : 'Crear evento'}</button>
+      <button class="btn ghost" id="ag-close">Cancelar</button>
+    </div></div></div>`;
+}
+
+function bindAgenda() {
+  const retry = document.getElementById('ag-retry');
+  if (retry) retry.onclick = () => { cal.connected = null; render(); };
+  const conn = document.getElementById('ag-connect');
+  if (conn) conn.onclick = () => { location.href = oauthUrl(); };
+  app.querySelectorAll('[data-calchip]').forEach(b => b.onclick = () => {
+    const id = b.dataset.calchip;
+    cal.sel = cal.sel.includes(id) ? cal.sel.filter(x => x !== id) : [...cal.sel, id];
+    if (!cal.sel.length) cal.sel = [id];
+    localStorage.setItem('salaCalSel', JSON.stringify(cal.sel));
+    agendaLoad(false);
+  });
+  const prev = document.getElementById('ag-prev'), next = document.getElementById('ag-next'), today = document.getElementById('ag-today');
+  if (prev) prev.onclick = () => { cal.weekOff--; agendaLoad(false); };
+  if (next) next.onclick = () => { cal.weekOff++; agendaLoad(false); };
+  if (today) today.onclick = () => { cal.weekOff = 0; agendaLoad(false); };
+  const nw = document.getElementById('ag-new');
+  if (nw) nw.onclick = () => {
+    cal.detail = null;
+    cal.form = { id: null, summary: '', calendarId: (cal.calendars.find(c=>c.primary)||cal.calendars[0]||{}).id,
+      date: calDayKey(new Date()), start: '09:00', end: '10:00', allDay: false, description: '' };
+    render();
+  };
+  app.querySelectorAll('[data-ev]').forEach(b => b.onclick = () => {
+    const [cid, eid] = b.dataset.ev.split('|');
+    cal.detail = cal.events.find(ev => ev.id === eid && ev._cal.id === cid) || null;
+    cal.form = null; render();
+  });
+  const close = document.getElementById('ag-close');
+  if (close) close.onclick = () => { cal.detail = null; cal.form = null; render(); };
+  const ov = document.getElementById('ag-overlay');
+  if (ov) ov.onclick = e => { if (e.target === ov) { cal.detail = null; cal.form = null; render(); } };
+  const allday = document.getElementById('agf-allday');
+  if (allday) allday.onchange = () => document.getElementById('agf-times').classList.toggle('ag-hidden', allday.checked);
+  const edit = document.getElementById('ag-edit');
+  if (edit) edit.onclick = () => {
+    const ev = cal.detail;
+    cal.form = { id: ev.id, calendarId: ev._cal.id, summary: ev.summary || '',
+      date: calDayKey(evStart(ev)),
+      start: ev.start.dateTime ? new Date(ev.start.dateTime).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit',hour12:false}) : '09:00',
+      end: ev.end.dateTime ? new Date(ev.end.dateTime).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit',hour12:false}) : '10:00',
+      allDay: !ev.start.dateTime, description: ev.description || '' };
+    cal.detail = null; render();
+  };
+  const del = document.getElementById('ag-del');
+  if (del) del.onclick = async () => {
+    const ev = cal.detail;
+    if (!confirm('¿Eliminar "' + (ev.summary || 'evento') + '"?')) return;
+    del.disabled = true;
+    await calApi('delete_event', { calendarId: ev._cal.id, eventId: ev.id });
+    cal.detail = null; agendaLoad(false);
+  };
+  const save = document.getElementById('ag-save');
+  if (save) save.onclick = async () => {
+    const summary = document.getElementById('agf-title').value.trim();
+    if (!summary) { document.getElementById('agf-title').focus(); return; }
+    const calendarId = document.getElementById('agf-cal').value;
+    const date = document.getElementById('agf-date').value;
+    const ad = document.getElementById('agf-allday').checked;
+    const description = document.getElementById('agf-desc').value.trim();
+    const event = { summary };
+    if (description) event.description = description;
+    if (ad) {
+      const endD = new Date(date + 'T00:00:00'); endD.setDate(endD.getDate() + 1);
+      event.start = { date }; event.end = { date: calDayKey(endD) };
+    } else {
+      event.start = { dateTime: date + 'T' + document.getElementById('agf-start').value + ':00', timeZone: 'Europe/Madrid' };
+      event.end = { dateTime: date + 'T' + document.getElementById('agf-end').value + ':00', timeZone: 'Europe/Madrid' };
+    }
+    save.disabled = true; save.textContent = 'Guardando…';
+    const f = cal.form;
+    const r = f.id
+      ? await calApi('update_event', { calendarId, eventId: f.id, event })
+      : await calApi('create_event', { calendarId, event });
+    if (r && r.error) { save.disabled = false; save.textContent = f.id ? 'Guardar cambios' : 'Crear evento'; alert('Error: ' + r.error); return; }
+    cal.form = null; agendaLoad(false);
+  };
+}
 
 function vHoy() {
   const pend = cache.tasks.filter(t=>!t.done).slice(0,3);
@@ -409,12 +617,13 @@ async function render() {
   if (tab==='lesson') return;
   let content = '';
   if (tab==='hoy') content = vHoy();
+  else if (tab==='agenda') content = vAgenda();
   else if (tab==='tareas') content = vTareas();
   else if (tab==='apuntes') content = vApuntes();
   else if (tab==='estudios') content = vEstudios();
   else if (tab==='tests') content = vTests();
   else if (tab==='idiomas') content = vIdiomas();
-  h(shell(content)); bindNav(); bindActions();
+  h(shell(content)); bindNav(); bindActions(); bindAgenda();
   app.querySelector('main').scrollTop = 0;
 }
 
