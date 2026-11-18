@@ -28,9 +28,9 @@ body{
   -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
 }
 /* --- fondo One Piece: ilustracion barcos + velo --- */
-body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+body.theme-onepiece::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
   background:url('fondo-barcos.jpg') center top/cover no-repeat}
-body::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+body.theme-onepiece::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
   background:linear-gradient(180deg, rgba(12,14,19,.10) 0%, rgba(12,14,19,.18) 30%, rgba(12,14,19,.42) 45%, rgba(12,14,19,.80) 68%, rgba(12,14,19,.92) 100%)}
 #app{position:relative;z-index:1;max-width:480px;margin:0 auto;height:100vh;height:100dvh;display:flex;flex-direction:column}
 .ship-space{height:clamp(150px,26vh,235px);flex:none}
@@ -290,6 +290,6 @@ a{color:var(--acc)}
 .wanted .w-score{text-align:center;font-size:40px;font-weight:800;color:var(--straw);line-height:1}
 .wanted .w-label{text-align:center;font-size:12px;color:#cbb26a;margin-top:4px}
 @media (min-width:960px){
-  body::before{background-image:url('fondo-barcos-wide.jpg');background-position:right top}
+  body.theme-onepiece::before{background-image:url('fondo-barcos-wide.jpg');background-position:right top}
   .tabbar{background:rgba(12,14,19,.55);backdrop-filter:blur(8px)}
 }

@@ -1,6 +1,8 @@
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 
 const CFG = window.SALA_CONFIG || {};
+const THEME_OP = CFG.THEME === 'onepiece';
+if (THEME_OP) document.body.classList.add('theme-onepiece');
 const app = document.getElementById('app');
 let sb = null, session = null, tab = 'hoy';
 let cache = { tasks: [], notes: [], topics: [], lessons: [], resources: [], results: [], testAttempts: [], pers: [] };
@@ -42,7 +44,7 @@ const AREA_DOT = {personal:'area-personal',trabajo:'area-trabajo',estudios:'area
 
 function shell(content) {
   return `<main>${content}</main><nav class="tabbar">` +
-    TABS.map(([id,icn,label],i) => `<button class="${tab===id?'on':''}" data-tab="${id}"><span class="ic-wrap">${ic(icn)}${(id==='hoy'||id==='idiomas')?HAT(15,'hat-mini'):''}</span>${label}</button>`).join('') + `</nav>`;
+    TABS.map(([id,icn,label],i) => `<button class="${tab===id?'on':''}" data-tab="${id}"><span class="ic-wrap">${ic(icn)}${THEME_OP&&(id==='hoy'||id==='idiomas')?HAT(15,'hat-mini'):''}</span>${label}</button>`).join('') + `</nav>`;
 }
 function bindNav() {
   app.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { tab = b.dataset.tab; render(); });
@@ -444,14 +446,14 @@ function vHoy() {
   <header class="top rise" style="animation-delay:.02s">
     <div class="grow"><div class="date-cap">${fechaStr}</div><h1>Hola, Samuel 👋</h1></div>
     <button class="icon-btn" id="btn-cuenta" title="Cuenta">${ic('settings',18)}</button>
-    <button class="icon-btn hat-host" id="btn-out" title="Cerrar sesión">${ic('logout',18)}${HAT(24,'hat-mini')}</button>
+    <button class="icon-btn ${THEME_OP?'hat-host':''}" id="btn-out" title="Cerrar sesión">${ic('logout',18)}${THEME_OP?HAT(24,'hat-mini'):''}</button>
   </header>
-  <div class="ship-space" aria-hidden="true"></div>
+  ${THEME_OP?'<div class="ship-space" aria-hidden="true"></div>':''}
 
   ${nextLesson ? `
   <div class="hero rise" style="animation-delay:.06s" data-go="idiomas">
     <span class="glyph">${nextLesson.lang==='ja'?'あ':'Aa'}</span>
-    <span class="logpose">${LOGPOSE(54)}</span>
+    ${THEME_OP?`<span class="logpose">${LOGPOSE(54)}</span>`:`<div class="go">${ic('chev',16,2.2)}</div>`}
     <div class="kicker">Toca estudiar</div>
     <h3>${esc(nextLesson.title)}</h3>
     <div class="meta">${ic('clock',14)} Unos 10 min · ${nextLesson.lang==='ja'?'Japonés':'Inglés'}</div>
@@ -465,18 +467,18 @@ function vHoy() {
 
   <div class="tiles rise" style="animation-delay:.12s; margin-top:12px">
     <div class="tile">
-      <div class="lab">${LOGPOSE(15)} Log Pose · Exámenes</div>
+      <div class="lab">${THEME_OP?LOGPOSE(15)+' Log Pose · Exámenes':ic('calendar',14)+' Exámenes Ilerna'}</div>
       <div class="big">${ex.dias} <small>días</small></div>
       <div class="bar"><i class="warn" style="width:${Math.max(4,Math.min(100,100-ex.dias/2))}%"></i></div>
     </div>
     <div class="tile">
-      <div class="lab"><span class="hat-host">${ic('globe',14)}${HAT(13,'hat-tile')}</span> Sesiones idiomas</div>
+      <div class="lab">${THEME_OP?`<span class="hat-host">${ic('globe',14)}${HAT(13,'hat-tile')}</span>`:ic('globe',14)} Sesiones idiomas</div>
       <div class="big">${lp.hechas}<small>/${lp.total}</small></div>
       <div class="bar"><i style="width:${lp.total?Math.round(lp.hechas/lp.total*100):0}%"></i></div>
     </div>
   </div>
 
-  <div class="sec rise" style="animation-delay:.18s"><h2>${ROSETA(16)} Tareas pendientes</h2><button class="link" data-go="tareas">Ver todas</button></div>
+  <div class="sec rise" style="animation-delay:.18s"><h2>${THEME_OP?ROSETA(16):''} Tareas pendientes</h2><button class="link" data-go="tareas">Ver todas</button></div>
   <div class="rise" style="animation-delay:.22s">
   ${pend.length ? pend.map(t=>`
     <div class="card task clickable"><button class="chk" data-task="${t.id}">${ic('check',14,3)}</button>
@@ -485,7 +487,7 @@ function vHoy() {
     : `<div class="empty">${ic('sparkle',26)}<div>Nada pendiente. Disfruta del día.</div></div>`}
   </div>
 
-  <div class="sec rise" style="animation-delay:.26s"><h2>${ROSETA(16)} Apuntes recientes</h2><button class="link" data-go="apuntes">Todos</button></div>
+  <div class="sec rise" style="animation-delay:.26s"><h2>${THEME_OP?ROSETA(16):''} Apuntes recientes</h2><button class="link" data-go="apuntes">Todos</button></div>
   <div class="rise" style="animation-delay:.3s">
   ${notas.length ? notas.map(n=>`
     <div class="card note-card clickable" data-note="${n.id}"><b>${esc(n.title)||'Sin título'}</b>
@@ -640,12 +642,12 @@ function vTestBank(b) {
   return `<header class="top rise"><button class="icon-btn" data-back>${ic('back',18)}</button>
   <div class="grow"><h1 class="small-h">${esc(b.bank)}</h1>
   <div class="sub">${esc(b.subject)} · 100 preguntas${b.comp?' · banco complementario':''}</div></div></header>
-  <div class="ship-space" aria-hidden="true"></div>
+  ${THEME_OP?'<div class="ship-space" aria-hidden="true"></div>':''}
   <div class="tiles rise" style="animation-delay:.05s">
     <div class="tile"><div class="lab">${ic('target',14)} Intentos</div><div class="big">${st?st.n:0}</div></div>
     <div class="tile"><div class="lab">${ic('check',14)} Mejor nota</div><div class="big">${st?st.best+'<small>%</small>':'—'}</div></div>
   </div>
-  ${st ? `<div class="wanted rise" style="animation-delay:.07s">
+  ${THEME_OP && st ? `<div class="wanted rise" style="animation-delay:.07s">
     ${HAT(44,'w-hat')}
     <div style="height:22px"></div>
     <div class="w-title">WANTED</div>
