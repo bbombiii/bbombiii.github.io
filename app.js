@@ -140,6 +140,7 @@ function vAgenda() {
       <button class="icon-btn" id="ag-prev">${ic('back')}</button>
       <button class="btn ghost" id="ag-today">Hoy</button>
       <button class="icon-btn" id="ag-next" style="transform:scaleX(-1)">${ic('back')}</button>
+      <button class="btn ghost" id="ag-disc" style="margin-left:auto">Desconectar</button>
     </div>`;
   out += `<div class="chips ag-chips rise">${chips}</div>`;
   const todayK = calDayKey(new Date());
@@ -221,6 +222,15 @@ function bindAgenda() {
   if (prev) prev.onclick = () => { cal.weekOff--; agendaLoad(false); };
   if (next) next.onclick = () => { cal.weekOff++; agendaLoad(false); };
   if (today) today.onclick = () => { cal.weekOff = 0; agendaLoad(false); };
+  const disc = document.getElementById('ag-disc');
+  if (disc) disc.onclick = async () => {
+    if (!confirm('¿Desconectar Google Calendar? Se borrará el token guardado y la Sala dejará de acceder a tu calendario. Tus eventos no se tocan.')) return;
+    const r = await calApi('disconnect');
+    if (r && r.error) { alert('Error: ' + r.error); return; }
+    cal.connected = false; cal.calendars = []; cal.sel = null; cal.events = []; cal.weekOff = 0;
+    localStorage.removeItem('salaCalSel');
+    render();
+  };
   const nw = document.getElementById('ag-new');
   if (nw) nw.onclick = () => {
     cal.detail = null;
