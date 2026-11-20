@@ -1098,7 +1098,7 @@ async function startTestRun(b, opts = {}) {
     list = list.filter(q=>ids.has(q.id));
     if (!list.length) return openBank(b);
   }
-  const coversAll = !opts.mode && (!opts.count || opts.count >= list.length);
+  const coversAll = !opts.mode && (!opts.count || opts.count >= list.length) && list.length === 100;
   list = kzShuffle([...list]);
   if (opts.count && list.length > opts.count) list = list.slice(0, opts.count);
   finishingRun = false;
