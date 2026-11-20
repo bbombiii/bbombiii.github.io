@@ -714,7 +714,7 @@ const nextCard = lang => {
   if (!nx) return `<div class="card rise" style="animation-delay:.06s"><div class="lesson-row">
     <span class="lang-badge ${lang}">${badge}</span>
     <div class="grow"><b>${name}: tanda completada</b>
-    <div class="meta">Has terminado todas las sesiones de esta tanda. Helena prepara la siguiente y aparecerá aquí cuando esté lista.</div></div></div>`;
+    <div class="meta">Has terminado todas las sesiones de esta tanda. Helena prepara la siguiente y aparecerá aquí cuando esté lista.</div></div></div></div>`;
   return `<div class="card clickable rise" style="animation-delay:.06s" data-lesson="${nx.lesson.id}"><div class="lesson-row">
     <span class="lang-badge ${lang}">${badge}</span>
     <div class="grow"><b>Siguiente: ${esc(nx.lesson.title)}</b>
