@@ -293,3 +293,7 @@ a{color:var(--acc)}
   body.theme-onepiece::before{background-image:url('fondo-barcos-wide.jpg');background-position:right top}
   .tabbar{background:rgba(12,14,19,.55);backdrop-filter:blur(8px)}
 }
+
+/* V1.0.2: trazo de kana + eventos ocultos */
+.kz-canvas{width:100%;max-width:340px;aspect-ratio:1/1;display:block;margin:14px auto 0;border:1.5px dashed var(--line);border-radius:var(--rad);background:var(--surface2);touch-action:none}
+.ag-ev-off{opacity:.4}

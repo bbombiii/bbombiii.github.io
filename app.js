@@ -5,7 +5,7 @@ const THEME_OP = CFG.THEME === 'onepiece';
 if (THEME_OP) document.body.classList.add('theme-onepiece');
 const app = document.getElementById('app');
 let sb = null, session = null, tab = 'hoy';
-let cache = { tasks: [], notes: [], topics: [], lessons: [], resources: [], results: [], testAttempts: [], pers: [] };
+let cache = { tasks: [], notes: [], topics: [], lessons: [], resources: [], results: [], testAttempts: [], pers: [], testStates: [], hidden: [] };
 let persSigned = {};
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -53,7 +53,7 @@ const header = (title, sub, extra='') =>
   `<header class="top rise"><div class="grow"><h1 class="small-h">${title}</h1>${sub?`<div class="sub">${sub}</div>`:''}</div>${extra}</header>`;
 
 async function loadAll() {
-  const [t,n,tp,l,r,res,ta,ks] = await Promise.all([
+  const [t,n,tp,l,r,res,ta,ks,tqs,hh] = await Promise.all([
     sb.from('tasks').select('*').order('created_at',{ascending:false}),
     sb.from('notes').select('*').order('updated_at',{ascending:false}),
     sb.from('topics').select('*').order('ord'),
@@ -62,9 +62,11 @@ async function loadAll() {
     sb.from('quiz_results').select('*'),
     sb.from('test_attempts').select('*').order('created_at',{ascending:false}),
     sb.from('kana_stats').select('*'),
+    sb.from('test_question_state').select('*'),
+    sb.from('agenda_hidden').select('*'),
   ]);
   const { data: persRows } = await sb.from('personalizacion').select('*').order('created_at',{ascending:false});
-  cache = { tasks:t.data||[], notes:n.data||[], topics:tp.data||[], lessons:l.data||[], resources:r.data||[], results:res.data||[], testAttempts:ta.data||[], pers:persRows||[] };
+  cache = { tasks:t.data||[], notes:n.data||[], topics:tp.data||[], lessons:l.data||[], resources:r.data||[], results:res.data||[], testAttempts:ta.data||[], pers:persRows||[], testStates:tqs.data||[], hidden:hh.data||[] };
   kanaStats = {};
   (ks.data||[]).forEach(row => { kanaStats[row.kana] = { ok:row.ok, fail:row.fail, last_fail:row.last_fail }; });
   persSigned = {};
@@ -135,6 +137,8 @@ async function agendaLoad(withCalendars) {
   if (cal.weekOff === 0) requestAnimationFrame(() => { const t = document.querySelector('.ag-today'); if (t) t.scrollIntoView({ block: 'start', behavior: 'smooth' }); });
 }
 
+const hiddenSet = () => new Set(cache.hidden.map(r => r.event_key));
+
 function vAgenda() {
   if (cal.connected === null) { agendaLoad(true); return header('Agenda', 'Tu Google Calendar') + `<div class="card rise"><div class="sub">Cargando…</div></div>`; }
   if (cal.connected === 'error') return header('Agenda', 'Tu Google Calendar') +
@@ -160,10 +164,12 @@ function vAgenda() {
       <button class="btn ghost" id="ag-disc" style="margin-left:auto">Desconectar</button>
     </div>`;
   out += `<div class="chips ag-chips rise">${chips}</div>`;
+  const hkeys = hiddenSet();
+  if (cache.hidden.length) out += `<button class="btn ghost block rise" id="ag-hidden-toggle" style="margin-bottom:8px">${cal.showHidden ? 'Volver a ocultarlos' : `Ver eventos ocultos en la Sala (${cache.hidden.length})`}</button>`;
   const todayK = calDayKey(new Date());
   for (const d of days) {
     const k = calDayKey(d);
-    const evs = cal.events.filter(ev => calDayKey(evStart(ev)) === k);
+    const evs = cal.events.filter(ev => calDayKey(evStart(ev)) === k && (cal.showHidden || !hkeys.has(ev._cal.id + '|' + ev.id)));
     if (!evs.length && k !== todayK) continue;
     out += `<div class="ag-day rise ${k === todayK ? 'ag-today' : ''}">
       <div class="ag-dayhead">${DOW[(d.getDay()+6)%7]} <span>${d.getDate()}</span></div>
@@ -172,7 +178,7 @@ function vAgenda() {
           ? new Date(ev.start.dateTime).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}) +
             ' - ' + new Date(ev.end.dateTime).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'})
           : 'Todo el día';
-        return `<button class="ag-ev" data-ev="${esc(ev._cal.id)}|${esc(ev.id)}">
+        return `<button class="ag-ev ${hkeys.has(ev._cal.id + '|' + ev.id) ? 'ag-ev-off' : ''}" data-ev="${esc(ev._cal.id)}|${esc(ev.id)}">
           <span class="ag-dot" style="background:${esc(ev._cal.color)}"></span>
           <span class="ag-ev-main"><b>${esc(ev.summary || '(sin título)')}</b><small>${time} · ${esc(ev._cal.name)}</small></span>
           ${ic('chev', 16)}</button>`;
@@ -200,8 +206,12 @@ function vAgendaDetail() {
     ${ev.description ? `<div class="ag-desc">${esc(ev.description)}</div>` : ''}
     <div class="ag-actions">
       <button class="btn" id="ag-edit">Editar</button>
+      ${hiddenSet().has(ev._cal.id + '|' + ev.id)
+        ? `<button class="btn" id="ag-unhide">Mostrar de nuevo</button>`
+        : `<button class="btn ghost" id="ag-hide">Ocultar en la Sala</button>`}
       <button class="btn ghost" id="ag-close">Cerrar</button>
-    </div></div></div>`;
+    </div>
+    <div class="mut small" style="margin-top:8px">Ocultar solo afecta a la Sala; tu Google Calendar no cambia.</div></div></div>`;
 }
 
 function vAgendaForm() {
@@ -265,6 +275,28 @@ function bindAgenda() {
   if (close) close.onclick = () => { cal.detail = null; cal.form = null; render(); };
   const ov = document.getElementById('ag-overlay');
   if (ov) ov.onclick = e => { if (e.target === ov) { cal.detail = null; cal.form = null; render(); } };
+  const hide = document.getElementById('ag-hide');
+  if (hide) hide.onclick = async () => {
+    const ev = cal.detail;
+    const key = ev._cal.id + '|' + ev.id;
+    hide.disabled = true;
+    const { error } = await sb.from('agenda_hidden').insert({ event_key: key, title: ev.summary || '' });
+    if (error) { hide.disabled = false; alert('Error: ' + error.message); return; }
+    cache.hidden.push({ event_key: key, title: ev.summary || '' });
+    cal.detail = null; render();
+  };
+  const unhide = document.getElementById('ag-unhide');
+  if (unhide) unhide.onclick = async () => {
+    const ev = cal.detail;
+    const key = ev._cal.id + '|' + ev.id;
+    unhide.disabled = true;
+    const { error } = await sb.from('agenda_hidden').delete().eq('event_key', key);
+    if (error) { unhide.disabled = false; alert('Error: ' + error.message); return; }
+    cache.hidden = cache.hidden.filter(r => r.event_key !== key);
+    cal.detail = null; render();
+  };
+  const ht = document.getElementById('ag-hidden-toggle');
+  if (ht) ht.onclick = () => { cal.showHidden = !cal.showHidden; render(); };
   const allday = document.getElementById('agf-allday');
   if (allday) allday.onchange = () => document.getElementById('agf-times').classList.toggle('ag-hidden', allday.checked);
   const edit = document.getElementById('ag-edit');
@@ -319,7 +351,20 @@ const KANA_GROUPS = [
   {id:'d', name:'Dakuten がざだばぱ', items:[['が','ga'],['ぎ','gi'],['ぐ','gu'],['げ','ge'],['ご','go'],['ざ','za'],['じ','ji'],['ず','zu'],['ぜ','ze'],['ぞ','zo'],['だ','da'],['で','de'],['ど','do'],['ば','ba'],['び','bi'],['ぶ','bu'],['べ','be'],['ぼ','bo'],['ぱ','pa'],['ぴ','pi'],['ぷ','pu'],['ぺ','pe'],['ぽ','po']]},
   {id:'c', name:'Combos きゃしゃちゃ', items:[['きゃ','kya'],['きゅ','kyu'],['きょ','kyo'],['しゃ','sha'],['しゅ','shu'],['しょ','sho'],['ちゃ','cha'],['ちゅ','chu'],['ちょ','cho'],['にゃ','nya'],['にゅ','nyu'],['にょ','nyo'],['ひゃ','hya'],['ひゅ','hyu'],['ひょ','hyo'],['みゃ','mya'],['みゅ','myu'],['みょ','myo'],['りゃ','rya'],['りゅ','ryu'],['りょ','ryo'],['ぎゃ','gya'],['ぎゅ','gyu'],['ぎょ','gyo'],['じゃ','ja'],['じゅ','ju'],['じょ','jo'],['びゃ','bya'],['びゅ','byu'],['びょ','byo'],['ぴゃ','pya'],['ぴゅ','pyu'],['ぴょ','pyo']]}
 ];
-const KANA_READ = {}; KANA_GROUPS.forEach(g => g.items.forEach(([k,r]) => KANA_READ[k] = r));
+const KATA_GROUPS = [
+  {id:'v', name:'Vocales', items:[['ア','a'],['イ','i'],['ウ','u'],['エ','e'],['オ','o']]},
+  {id:'k', name:'カ K', items:[['カ','ka'],['キ','ki'],['ク','ku'],['ケ','ke'],['コ','ko']]},
+  {id:'s', name:'サ S', items:[['サ','sa'],['シ','shi'],['ス','su'],['セ','se'],['ソ','so']]},
+  {id:'t', name:'タ T', items:[['タ','ta'],['チ','chi'],['ツ','tsu'],['テ','te'],['ト','to']]},
+  {id:'n', name:'ナ N', items:[['ナ','na'],['ニ','ni'],['ヌ','nu'],['ネ','ne'],['ノ','no']]},
+  {id:'h', name:'ハ H', items:[['ハ','ha'],['ヒ','hi'],['フ','fu'],['ヘ','he'],['ホ','ho']]},
+  {id:'m', name:'マ M', items:[['マ','ma'],['ミ','mi'],['ム','mu'],['メ','me'],['モ','mo']]},
+  {id:'y', name:'ヤ Y', items:[['ヤ','ya'],['ユ','yu'],['ヨ','yo']]},
+  {id:'r', name:'ラ R', items:[['ラ','ra'],['リ','ri'],['ル','ru'],['レ','re'],['ロ','ro']]},
+  {id:'w', name:'ワ W', items:[['ワ','wa'],['ヲ','wo'],['ン','n']]}
+];
+const KANA_READ = {}; [...KANA_GROUPS, ...KATA_GROUPS].forEach(g => g.items.forEach(([k,r]) => KANA_READ[k] = r));
+const kanaGroups = () => (kz && kz.script === 'kata') ? KATA_GROUPS : KANA_GROUPS;
 const KANA_ALIAS = { si:'shi', ti:'chi', tu:'tsu', hu:'fu', zi:'ji', di:'ji', du:'zu', o:'wo' };
 let kanaStats = {};
 let kz = null;
@@ -334,9 +379,14 @@ function kanaHit(k, okAns) {
 }
 
 function openKana() {
-  let sel = null;
-  try { sel = JSON.parse(localStorage.getItem('salaKanaSel')||'null'); } catch(e) {}
+  let sel = null, mode = 'read', script = 'hira';
+  try {
+    sel = JSON.parse(localStorage.getItem('salaKanaSel')||'null');
+    mode = localStorage.getItem('salaKanaMode') || 'read';
+    script = localStorage.getItem('salaKanaScript') || 'hira';
+  } catch(e) {}
   kz = { phase:'setup', sel: (sel && sel.length ? sel : KANA_GROUPS.filter(g=>g.id!=='d'&&g.id!=='c').map(g=>g.id)),
+         script, mode, strokes:[], showGuide:true,
          deck:[], pos:0, total:0, cleared:0, firstTryOk:0, wrongs:[], fb:null };
   renderKana();
 }
@@ -347,15 +397,23 @@ function renderKana() {
 
 function vKana() {
   const head = `<header class="top rise"><button class="icon-btn" data-back>${ic('back',18)}</button>
-    <div class="grow"><h1 class="small-h">Práctica de kana</h1><div class="sub">Hiragana · escribe la lectura en romaji</div></div></header>`;
+    <div class="grow"><h1 class="small-h">Práctica de kana</h1><div class="sub">${kz.script==='kata'?'Katakana':'Hiragana'} · ${kz.mode==='trace'?'traza con el dedo sobre la guía':'escribe la lectura en romaji'}</div></div></header>`;
   if (kz.phase === 'setup') {
-    const total = KANA_GROUPS.filter(g => kz.sel.includes(g.id)).reduce((n,g) => n + g.items.length, 0);
+    const total = kanaGroups().filter(g => kz.sel.includes(g.id)).reduce((n,g) => n + g.items.length, 0);
     const fails = Object.entries(kanaStats).filter(([k,s]) => s.fail > 0)
       .sort((a,b) => b[1].fail - a[1].fail || new Date(b[1].last_fail||0) - new Date(a[1].last_fail||0)).slice(0,8);
     return head + `
     <div class="card rise"><b>Elige qué practicar</b>
-      <div class="chips" style="margin-top:12px;flex-wrap:wrap">${KANA_GROUPS.map(g => `<div class="chip ${kz.sel.includes(g.id)?'on':''}" data-kg="${g.id}">${esc(g.name)}</div>`).join('')}</div>
-      <button class="btn primary block" id="kz-start" style="margin-top:16px" ${total?'':'disabled'}>Empezar · ${total} kana</button>
+      <div class="chips" style="margin-top:12px">
+        <div class="chip ${kz.mode==='read'?'on':''}" data-kmode="read">Leer</div>
+        <div class="chip ${kz.mode==='trace'?'on':''}" data-kmode="trace">Trazar</div>
+      </div>
+      <div class="chips">
+        <div class="chip ${kz.script==='hira'?'on':''}" data-kscript="hira">Hiragana あ</div>
+        <div class="chip ${kz.script==='kata'?'on':''}" data-kscript="kata">Katakana ア</div>
+      </div>
+      <div class="chips" style="flex-wrap:wrap">${kanaGroups().map(g => `<div class="chip ${kz.sel.includes(g.id)?'on':''}" data-kg="${g.id}">${esc(g.name)}</div>`).join('')}</div>
+      <button class="btn primary block" id="kz-start" style="margin-top:16px" ${total?'':'disabled'}>${kz.mode==='trace'?'Empezar a trazar':'Empezar'} · ${total} kana</button>
     </div>
     ${fails.length ? `<div class="sec rise"><h2>Dónde fallas</h2></div>
     <div class="card rise">${fails.map(([k,s]) => `<div class="kz-failrow"><span class="kz-k">${k}</span><span class="grow mut">${esc(KANA_READ[k]||'')}</span><span class="pill no">${s.fail}✗</span></div>`).join('')}</div>` : ''}`;
@@ -374,6 +432,24 @@ function vKana() {
            <button class="btn primary block" id="kz-check" style="margin-top:12px">Comprobar</button>`}
     </div>`;
   }
+  if (kz.phase === 'trace') {
+    const item = kz.deck[kz.pos];
+    return head + `
+    <div class="card rise" style="text-align:center">
+      <div class="mut small">${kz.pos+1}/${kz.deck.length} · ${esc(item[1])}</div>
+      <div class="bar" style="margin-top:8px"><i style="width:${Math.round(kz.pos/kz.deck.length*100)}%"></i></div>
+      <canvas id="kz-canvas" class="kz-canvas" width="640" height="640"></canvas>
+      <div class="row" style="margin-top:12px">
+        <button class="btn grow" id="kz-clear">Borrar</button>
+        <button class="btn grow" id="kz-guide">${kz.showGuide===false?'Mostrar guía':'Ocultar guía'}</button>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn ghost grow" id="kz-prev" ${kz.pos===0?'disabled':''}>Anterior</button>
+        <button class="btn primary grow" id="kz-next-t">${kz.pos+1<kz.deck.length?'Siguiente':'Terminar'}</button>
+      </div>
+      <div class="mut small" style="margin-top:12px">Traza el kana con el dedo siguiendo la guía. No hay corrección automática: compara tú con la guía y repite.</div>
+    </div>`;
+  }
   const uniq = [];
   kz.wrongs.forEach(it => { if (!uniq.some(u => u[0]===it[0])) uniq.push(it); });
   return head + `
@@ -389,6 +465,8 @@ function vKana() {
 }
 
 function bindKana() {
+  app.querySelectorAll('[data-kmode]').forEach(c => c.onclick = () => { kz.mode = c.dataset.kmode; localStorage.setItem('salaKanaMode', kz.mode); renderKana(); });
+  app.querySelectorAll('[data-kscript]').forEach(c => c.onclick = () => { kz.script = c.dataset.kscript; localStorage.setItem('salaKanaScript', kz.script); renderKana(); });
   app.querySelectorAll('[data-kg]').forEach(c => c.onclick = () => {
     const id = c.dataset.kg;
     kz.sel = kz.sel.includes(id) ? kz.sel.filter(x => x!==id) : [...kz.sel, id];
@@ -397,8 +475,13 @@ function bindKana() {
   });
   const start = document.getElementById('kz-start');
   if (start) start.onclick = () => {
-    const items = KANA_GROUPS.filter(g => kz.sel.includes(g.id)).flatMap(g => g.items);
+    const items = kanaGroups().filter(g => kz.sel.includes(g.id)).flatMap(g => g.items);
     if (!items.length) return;
+    if (kz.mode === 'trace') {
+      kz.deck = items.map(it => [...it]);
+      kz.pos = 0; kz.strokes = []; kz.showGuide = true;
+      kz.phase = 'trace'; renderKana(); return;
+    }
     kz.deck = kzShuffle(items.map(it => [...it]));
     kz.pos = 0; kz.total = kz.deck.length; kz.cleared = 0; kz.firstTryOk = 0; kz.wrongs = []; kz.fb = null;
     kz.phase = 'quiz'; renderKana();
@@ -432,6 +515,37 @@ function bindKana() {
   };
   const again = document.getElementById('kz-again');
   if (again) again.onclick = () => { kz.phase = 'setup'; renderKana(); };
+  const canvas = document.getElementById('kz-canvas');
+  if (canvas) {
+    const item = kz.deck[kz.pos];
+    const ctx = canvas.getContext('2d');
+    const redraw = () => {
+      ctx.clearRect(0, 0, 640, 640);
+      if (kz.showGuide !== false) {
+        ctx.font = '400px "Hiragino Sans","Noto Sans JP","Yu Gothic",sans-serif';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = 'rgba(255,255,255,.12)';
+        ctx.fillText(item[0], 320, 350);
+      }
+      ctx.lineWidth = 24; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      ctx.strokeStyle = 'rgba(240,240,246,.92)';
+      (kz.strokes || []).forEach(st => { if (!st.length) return; ctx.beginPath(); st.forEach((pt, i) => i ? ctx.lineTo(pt[0], pt[1]) : ctx.moveTo(pt[0], pt[1])); ctx.stroke(); });
+    };
+    const posOf = e => { const r = canvas.getBoundingClientRect(); return [(e.clientX - r.left) * 640 / r.width, (e.clientY - r.top) * 640 / r.height]; };
+    let drawing = false;
+    canvas.addEventListener('pointerdown', e => { e.preventDefault(); drawing = true; kz.strokes = kz.strokes || []; kz.strokes.push([posOf(e)]); try { canvas.setPointerCapture(e.pointerId); } catch(_) {} redraw(); });
+    canvas.addEventListener('pointermove', e => { if (!drawing) return; e.preventDefault(); kz.strokes[kz.strokes.length-1].push(posOf(e)); redraw(); });
+    ['pointerup','pointercancel','pointerleave'].forEach(ev => canvas.addEventListener(ev, () => { drawing = false; }));
+    redraw();
+    const clr = document.getElementById('kz-clear');
+    if (clr) clr.onclick = () => { kz.strokes = []; redraw(); };
+    const gd = document.getElementById('kz-guide');
+    if (gd) gd.onclick = () => { kz.showGuide = !(kz.showGuide !== false); gd.textContent = kz.showGuide === false ? 'Mostrar guía' : 'Ocultar guía'; redraw(); };
+    const pv = document.getElementById('kz-prev');
+    if (pv) pv.onclick = () => { if (kz.pos > 0) { kz.pos--; kz.strokes = []; renderKana(); } };
+    const nt = document.getElementById('kz-next-t');
+    if (nt) nt.onclick = () => { if (kz.pos + 1 < kz.deck.length) { kz.pos++; kz.strokes = []; renderKana(); } else { kz.phase = 'setup'; renderKana(); } };
+  }
 }
 
 function vHoy() {
@@ -567,6 +681,34 @@ function vEstudios() {
     || '<div class="empty">Helena añadirá recursos aquí.</div>'}`;
 }
 
+const nextFor = lang => {
+  const ls = cache.lessons.filter(l => l.lang === lang).sort((a, b) => a.day - b.day);
+  const undone = ls.find(l => !cache.results.some(r => r.lesson_id === l.id));
+  if (!undone) return null;
+  const idx = ls.indexOf(undone);
+  const prev = idx > 0 ? ls[idx - 1] : null;
+  let repaso = false;
+  if (prev) {
+    const best = Math.max(-1, ...cache.results.filter(r => r.lesson_id === prev.id).map(r => r.score));
+    repaso = best >= 0 && best < (prev.quiz || []).length;
+  }
+  return { lesson: undone, repaso };
+};
+const nextCard = lang => {
+  const nx = nextFor(lang);
+  const badge = lang === 'ja' ? 'あ' : 'EN';
+  const name = lang === 'ja' ? 'Japonés' : 'Inglés';
+  if (!nx) return `<div class="card rise" style="animation-delay:.06s"><div class="lesson-row">
+    <span class="lang-badge ${lang}">${badge}</span>
+    <div class="grow"><b>${name}: tanda completada</b>
+    <div class="meta">Has terminado todas las sesiones de esta tanda. Pídele a Helena la siguiente tanda.</div></div></div>`;
+  return `<div class="card clickable rise" style="animation-delay:.06s" data-lesson="${nx.lesson.id}"><div class="lesson-row">
+    <span class="lang-badge ${lang}">${badge}</span>
+    <div class="grow"><b>Siguiente: ${esc(nx.lesson.title)}</b>
+    <div class="meta">${nx.repaso ? 'La sesión anterior te salió floja: repásala si quieres antes' : name + ' · sesión ' + nx.lesson.day}</div></div>
+    ${ic('chev',16)}</div></div>`;
+};
+
 function vIdiomas() {
   const lp = langProgress();
   return `${header('Idiomas','Japonés e inglés en sesiones cortas. Plan completo en Recursos.')}
@@ -575,6 +717,8 @@ function vIdiomas() {
     <div class="grow"><b>Progreso del plan</b><div class="mut small">${lp.hechas} de ${lp.total} sesiones completadas</div></div></div>
     <div class="bar"><i style="width:${lp.total?Math.round(lp.hechas/lp.total*100):0}%"></i></div>
   </div>
+  <div class="sec rise" style="animation-delay:.06s"><h2>Continúa por aquí</h2></div>
+  ${['ja','en'].map(nextCard).join('')}
   <div class="card clickable rise" style="animation-delay:.07s" data-kana><div class="lesson-row">
     <span class="lang-badge ja">あ</span>
     <div class="grow"><b>Práctica de kana</b><div class="meta">Hiragana · lectura en romaji, con registro de fallos</div></div>
@@ -618,6 +762,19 @@ const bankStats = bank => {
   const l = cache.testAttempts.filter(a => a.bank===bank);
   return l.length ? { n:l.length, best:Math.max(...l.map(a=>Math.round(100*a.score/a.total))), last:l[0] } : null;
 };
+const stateByQid = () => { const m = {}; cache.testStates.forEach(s => { m[s.question_id] = s; }); return m; };
+const bankProgress = bank => {
+  const rows = cache.testStates.filter(s => s.bank === bank);
+  if (!rows.length) return null;
+  return { vistas: rows.length, dominadas: rows.filter(s => s.last_correct).length };
+};
+const bankCardMeta = (bank, st) => {
+  const parts = [];
+  if (st) parts.push(`${st.n} intento${st.n===1?'':'s'} · mejor nota ${st.best}%`);
+  const pr = bankProgress(bank);
+  if (pr) parts.push(`${pr.vistas} vistas · ${pr.dominadas} dominadas`);
+  return parts.length ? parts.join(' · ') : 'Sin intentos todavía';
+};
 
 function vTests() {
   const subs = [...new Set(BANKS.map(b=>b.subject))];
@@ -628,7 +785,7 @@ function vTests() {
       return `<div class="card clickable rise" style="animation-delay:${.08+si*.06+i*.03}s" data-bank="${esc(b.bank)}"><div class="lesson-row">
       <span class="lang-badge ${b.subject==='SOR'?'en':'ja'}">${bankBadge(b.subject)}</span>
       <div class="grow"><b>${esc(b.bank)}</b>${b.comp?' <span class="pill warn">Complementario</span>':''}
-      <div class="meta">${st ? `${st.n} intento${st.n===1?'':'s'} · mejor nota ${st.best}%` : 'Sin intentos todavía'}</div></div>
+      <div class="meta">${bankCardMeta(b.bank, st)}</div></div>
       ${ic('chev',16)}</div></div>`;
     }).join('')).join('')}
   <div class="mut small center mt">Las preguntas y respuestas vienen de tus PDF de estudio (bancos por RA), tal cual.</div>`;
@@ -637,8 +794,8 @@ function vTests() {
 function vTestBank(b) {
   const ats = cache.testAttempts.filter(a=>a.bank===b.bank);
   const st = bankStats(b.bank);
-  const last = st ? st.last : null;
-  const fails = last ? last.total - last.score : 0;
+  const pr = bankProgress(b.bank);
+  const failedEver = cache.testStates.filter(s => s.bank === b.bank && s.fail > 0 && !s.last_correct).length;
   return `<header class="top rise"><button class="icon-btn" data-back>${ic('back',18)}</button>
   <div class="grow"><h1 class="small-h">${esc(b.bank)}</h1>
   <div class="sub">${esc(b.subject)} · 100 preguntas${b.comp?' · banco complementario':''}</div></div></header>
@@ -647,6 +804,10 @@ function vTestBank(b) {
     <div class="tile"><div class="lab">${ic('target',14)} Intentos</div><div class="big">${st?st.n:0}</div></div>
     <div class="tile"><div class="lab">${ic('check',14)} Mejor nota</div><div class="big">${st?st.best+'<small>%</small>':'—'}</div></div>
   </div>
+  ${pr ? `<div class="card rise" style="animation-delay:.06s">
+    <div class="row" style="justify-content:space-between"><b>Progreso del banco</b><span class="mut small">${pr.dominadas} dominadas · ${pr.vistas} vistas</span></div>
+    <div class="bar" style="margin-top:8px"><i style="width:${Math.min(100, pr.dominadas)}%"></i></div>
+  </div>` : ''}
   ${THEME_OP && st ? `<div class="wanted rise" style="animation-delay:.07s">
     ${HAT(44,'w-hat')}
     <div style="height:22px"></div>
@@ -655,8 +816,13 @@ function vTestBank(b) {
     <div class="w-score">${st.best}%</div>
     <div class="w-label">${esc(b.bank)} · tu mejor marca hasta ahora</div>
   </div>` : ''}
-  <button class="btn primary block rise" style="animation-delay:.08s" id="bt-start">${ic('play',17,2)} Empezar test de 100</button>
-  ${fails>0 ? `<button class="btn block rise" style="animation-delay:.11s" id="bt-failed">${ic('sparkle',17,1.8)} Repasar las ${fails} falladas del último intento</button>` : ''}
+  <div class="card rise" style="animation-delay:.08s">
+    <b>Preparar test</b>
+    <div class="mut small" style="margin:4px 0 10px">Elige la longitud. Las preguntas salen en orden aleatorio y se corrigen al momento, con explicación.</div>
+    <div class="chips">${[10,25,50,100].map(n => `<div class="chip ${n===25?'on':''}" data-tcount="${n}">${n===100?'Todas':n}</div>`).join('')}</div>
+    <button class="btn primary block" id="bt-start" style="margin-top:6px">${ic('play',17,2)} Empezar test</button>
+  </div>
+  ${failedEver>0 ? `<button class="btn block rise" style="animation-delay:.11s" id="bt-failed">${ic('sparkle',17,1.8)} Repasar las que te cuestan (${failedEver})</button>` : ''}
   <div class="sec rise" style="animation-delay:.14s"><h2>Historial</h2><span class="count">${ats.length}</span></div>
   ${ats.length ? ats.slice(0,10).map((a,i)=>{
       const pct = Math.round(100*a.score/a.total);
@@ -666,13 +832,18 @@ function vTestBank(b) {
 
 let trun = null;
 
-async function startTestRun(b, onlyFailed) {
+async function startTestRun(b, opts = {}) {
   h(shell(`<header class="top rise"><button class="icon-btn" data-back>${ic('back',18)}</button><div class="grow"><h1 class="small-h">${esc(b.bank)}</h1><div class="sub">Cargando preguntas...</div></div></header>`)); bindNav();
   app.querySelector('[data-back]').onclick = () => openBank(b);
   const { data } = await sb.from('test_questions').select('*').eq('bank', b.bank).order('ord');
   let list = data || [];
   if (!list.length) return openBank(b);
-  if (onlyFailed) {
+  if (opts.mode === 'failed') {
+    const m = stateByQid();
+    list = list.filter(q => { const s = m[q.id]; return s && s.fail > 0 && !s.last_correct; });
+    if (!list.length) return openBank(b);
+  }
+  if (opts.mode === 'lastFailed') {
     const last = (cache.testAttempts.find(a=>a.bank===b.bank));
     if (!last) return openBank(b);
     const { data:ans } = await sb.from('test_answers').select('question_id').eq('attempt_id', last.id).eq('correct', false);
@@ -680,6 +851,8 @@ async function startTestRun(b, onlyFailed) {
     list = list.filter(q=>ids.has(q.id));
     if (!list.length) return openBank(b);
   }
+  list = kzShuffle([...list]);
+  if (opts.count && list.length > opts.count) list = list.slice(0, opts.count);
   trun = { bank:b, list, i:0, answers:[], locked:false };
   renderRun();
 }
@@ -741,6 +914,20 @@ async function finishRun() {
     const rows = trun.answers.map(a=>({ attempt_id:att.id, question_id:a.question_id, chosen:a.chosen, correct:a.correct }));
     if (rows.length) await sb.from('test_answers').insert(rows);
     cache.testAttempts.unshift(att);
+    const m = stateByQid();
+    const srows = trun.answers.map(a => {
+      const cur = m[a.question_id] || {};
+      return { question_id: a.question_id, bank: trun.bank.bank,
+        seen: (cur.seen||0) + 1, ok: (cur.ok||0) + (a.correct ? 1 : 0), fail: (cur.fail||0) + (a.correct ? 0 : 1),
+        last_correct: a.correct, updated_at: new Date().toISOString() };
+    });
+    if (srows.length) {
+      await sb.from('test_question_state').upsert(srows, { onConflict: 'question_id' });
+      srows.forEach(r => {
+        const i = cache.testStates.findIndex(s => s.question_id === r.question_id);
+        if (i >= 0) cache.testStates[i] = r; else cache.testStates.push(r);
+      });
+    }
   }
   renderResult(score, total, !!att);
 }
@@ -771,15 +958,20 @@ function renderResult(score, total, saved) {
   </div>`)); bindNav();
   document.getElementById('res-back').onclick = () => openBank(trun.bank);
   const rf = document.getElementById('res-failed');
-  if (rf) rf.onclick = () => startTestRun(trun.bank, true);
+  if (rf) rf.onclick = () => startTestRun(trun.bank, { mode: 'lastFailed' });
 }
 
 function openBank(b) {
   h(shell(vTestBank(b))); bindNav();
   app.querySelector('[data-back]').onclick = () => { tab='tests'; render(); };
-  document.getElementById('bt-start').onclick = () => startTestRun(b, false);
+  let prepCount = 25;
+  app.querySelectorAll('[data-tcount]').forEach(c => c.onclick = () => {
+    prepCount = +c.dataset.tcount;
+    app.querySelectorAll('[data-tcount]').forEach(x => x.classList.toggle('on', x === c));
+  });
+  document.getElementById('bt-start').onclick = () => startTestRun(b, { count: prepCount });
   const bf = document.getElementById('bt-failed');
-  if (bf) bf.onclick = () => startTestRun(b, true);
+  if (bf) bf.onclick = () => startTestRun(b, { mode: 'failed' });
 }
 
 /* ---------- Cuenta / Personalización ---------- */
@@ -995,8 +1187,13 @@ function openLesson(l) {
     send.disabled = true;
     await sb.from('quiz_results').insert({lesson_id:l.id, score, total:quiz.length});
     cache.results.push({lesson_id:l.id, score, total:quiz.length});
+    const nx = nextFor(l.lang);
     document.getElementById('quiz-out').innerHTML =
-      `<div class="card center mt"><div style="font-size:30px;font-weight:800">${score}/${quiz.length}</div><div class="mut small">${score===quiz.length?'¡Perfecto! 🎉':'Repasa los fallos arriba y mañana seguimos 💪'}</div></div>`;
+      `<div class="card center mt"><div style="font-size:30px;font-weight:800">${score}/${quiz.length}</div><div class="mut small">${score===quiz.length?'¡Perfecto! 🎉':'Repasa los fallos arriba y mañana seguimos 💪'}</div></div>` +
+      (nx ? `<button class="btn primary block" id="quiz-next" style="margin-top:10px">Siguiente sesión: ${esc(nx.lesson.title)}</button>`
+          : `<div class="card center mt"><div class="mut small">Tanda completada. Pídele a Helena la siguiente tanda cuando quieras seguir.</div></div>`);
+    const qn = document.getElementById('quiz-next');
+    if (qn) qn.onclick = () => openLesson(nx.lesson);
   };
   app.querySelectorAll('.quiz-opt').forEach(b => b.onclick = () => {
     b.parentElement.querySelectorAll('.quiz-opt').forEach(x=>x.classList.remove('picked'));
