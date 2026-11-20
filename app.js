@@ -5,7 +5,7 @@ const THEME_OP = CFG.THEME === 'onepiece';
 if (THEME_OP) document.body.classList.add('theme-onepiece');
 const app = document.getElementById('app');
 let sb = null, session = null, tab = 'hoy';
-let cache = { tasks: [], notes: [], topics: [], lessons: [], resources: [], results: [], testAttempts: [], pers: [], testStates: [], hidden: [] };
+let cache = { tasks: [], notes: [], topics: [], lessons: [], resources: [], results: [], testAttempts: [], pers: [], testStates: [], hidden: [], hiddenCals: [] };
 let persSigned = {};
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -53,7 +53,7 @@ const header = (title, sub, extra='') =>
   `<header class="top rise"><div class="grow"><h1 class="small-h">${title}</h1>${sub?`<div class="sub">${sub}</div>`:''}</div>${extra}</header>`;
 
 async function loadAll() {
-  const [t,n,tp,l,r,res,ta,ks,tqs,hh] = await Promise.all([
+  const [t,n,tp,l,r,res,ta,ks,tqs,hh,hc] = await Promise.all([
     sb.from('tasks').select('*').order('created_at',{ascending:false}),
     sb.from('notes').select('*').order('updated_at',{ascending:false}),
     sb.from('topics').select('*').order('ord'),
@@ -64,9 +64,10 @@ async function loadAll() {
     sb.from('kana_stats').select('*'),
     sb.from('test_question_state').select('*'),
     sb.from('agenda_hidden').select('*'),
+    sb.from('agenda_cal_hidden').select('*'),
   ]);
   const { data: persRows } = await sb.from('personalizacion').select('*').order('created_at',{ascending:false});
-  cache = { tasks:t.data||[], notes:n.data||[], topics:tp.data||[], lessons:l.data||[], resources:r.data||[], results:res.data||[], testAttempts:ta.data||[], pers:persRows||[], testStates:tqs.data||[], hidden:hh.data||[] };
+  cache = { tasks:t.data||[], notes:n.data||[], topics:tp.data||[], lessons:l.data||[], resources:r.data||[], results:res.data||[], testAttempts:ta.data||[], pers:persRows||[], testStates:tqs.data||[], hidden:hh.data||[], hiddenCals:(typeof hc!=='undefined'?hc.data:null)||[] };
   kanaStats = {};
   (ks.data||[]).forEach(row => { kanaStats[row.kana] = { ok:row.ok, fail:row.fail, last_fail:row.last_fail }; });
   persSigned = {};
@@ -123,7 +124,10 @@ async function agendaLoad(withCalendars) {
     if (r.error) { cal.connected = 'error'; cal.errMsg = r.error; cal.busy = false; render(); return; }
     cal.connected = true;
     cal.calendars = (r.items || []).map(c => ({ id: c.id, name: c.summary, color: c.backgroundColor || '#7aa2ff', primary: !!c.primary }));
-    if (!cal.sel) cal.sel = cal.calendars.map(c => c.id);
+    const serverHidden = new Set(cache.hiddenCals.map(r => r.calendar_id));
+    if (serverHidden.size) {
+      cal.sel = cal.calendars.map(c => c.id).filter(id => !serverHidden.has(id));
+    } else if (!cal.sel) cal.sel = cal.calendars.map(c => c.id);
     localStorage.setItem('salaCalSel', JSON.stringify(cal.sel));
   }
   const m = calMonday(cal.weekOff), e = new Date(m); e.setDate(e.getDate() + 7);
@@ -239,11 +243,20 @@ function bindAgenda() {
   if (retry) retry.onclick = () => { cal.connected = null; render(); };
   const conn = document.getElementById('ag-connect');
   if (conn) conn.onclick = () => { location.href = oauthUrl(); };
-  app.querySelectorAll('[data-calchip]').forEach(b => b.onclick = () => {
+  app.querySelectorAll('[data-calchip]').forEach(b => b.onclick = async () => {
     const id = b.dataset.calchip;
-    cal.sel = cal.sel.includes(id) ? cal.sel.filter(x => x !== id) : [...cal.sel, id];
+    const hiding = cal.sel.includes(id);
+    cal.sel = hiding ? cal.sel.filter(x => x !== id) : [...cal.sel, id];
     if (!cal.sel.length) cal.sel = [id];
     localStorage.setItem('salaCalSel', JSON.stringify(cal.sel));
+    const cname = (cal.calendars.find(c => c.id === id) || {}).name || '';
+    if (hiding) {
+      await sb.from('agenda_cal_hidden').upsert({ calendar_id: id, name: cname }, { onConflict: 'calendar_id' });
+      if (!cache.hiddenCals.some(r => r.calendar_id === id)) cache.hiddenCals.push({ calendar_id: id, name: cname });
+    } else {
+      await sb.from('agenda_cal_hidden').delete().eq('calendar_id', id);
+      cache.hiddenCals = cache.hiddenCals.filter(r => r.calendar_id !== id);
+    }
     agendaLoad(false);
   });
   const prev = document.getElementById('ag-prev'), next = document.getElementById('ag-next'), today = document.getElementById('ag-today');
@@ -701,7 +714,7 @@ const nextCard = lang => {
   if (!nx) return `<div class="card rise" style="animation-delay:.06s"><div class="lesson-row">
     <span class="lang-badge ${lang}">${badge}</span>
     <div class="grow"><b>${name}: tanda completada</b>
-    <div class="meta">Has terminado todas las sesiones de esta tanda. Pídele a Helena la siguiente tanda.</div></div></div>`;
+    <div class="meta">Has terminado todas las sesiones de esta tanda. Helena prepara la siguiente y aparecerá aquí cuando esté lista.</div></div></div>`;
   return `<div class="card clickable rise" style="animation-delay:.06s" data-lesson="${nx.lesson.id}"><div class="lesson-row">
     <span class="lang-badge ${lang}">${badge}</span>
     <div class="grow"><b>Siguiente: ${esc(nx.lesson.title)}</b>
@@ -820,6 +833,11 @@ function vTestBank(b) {
     <b>Preparar test</b>
     <div class="mut small" style="margin:4px 0 10px">Elige la longitud. Las preguntas salen en orden aleatorio y se corrigen al momento, con explicación.</div>
     <div class="chips">${[10,25,50,100].map(n => `<div class="chip ${n===25?'on':''}" data-tcount="${n}">${n===100?'Todas':n}</div>`).join('')}</div>
+    <div class="chips" style="margin-top:8px">
+      <div class="chip on" data-tcorr="end">Corregir al final</div>
+      <div class="chip" data-tcorr="now">Corregir al momento</div>
+    </div>
+    <div class="mut small" style="margin:2px 0 8px">Al final puedes moverte entre preguntas, cambiar respuestas y dejar alguna en blanco. Al momento es práctica rápida con explicación tras cada una.</div>
     <button class="btn primary block" id="bt-start" style="margin-top:6px">${ic('play',17,2)} Empezar test</button>
   </div>
   ${failedEver>0 ? `<button class="btn block rise" style="animation-delay:.11s" id="bt-failed">${ic('sparkle',17,1.8)} Repasar las que te cuestan (${failedEver})</button>` : ''}
@@ -853,11 +871,12 @@ async function startTestRun(b, opts = {}) {
   }
   list = kzShuffle([...list]);
   if (opts.count && list.length > opts.count) list = list.slice(0, opts.count);
-  trun = { bank:b, list, i:0, answers:[], locked:false };
+  trun = { bank:b, list, i:0, answers:[], locked:false, corr: opts.corr || 'now', resp: {} };
   renderRun();
 }
 
 function renderRun() {
+  if (trun.corr === 'end') return renderRunEnd();
   const q = trun.list[trun.i];
   const n = trun.list.length;
   const num = trun.i + 1;
@@ -903,7 +922,55 @@ function renderRun() {
   });
 }
 
+function renderRunEnd() {
+  const q = trun.list[trun.i];
+  const n = trun.list.length;
+  const num = trun.i + 1;
+  const answered = Object.keys(trun.resp).length;
+  h(shell(`
+  <header class="top rise"><button class="icon-btn" data-back>${ic('back',18)}</button>
+    <div class="grow"><h1 class="small-h">${esc(trun.bank.bank)}</h1>
+    <div class="sub">Pregunta ${num} de ${n} · ${answered} respondida${answered===1?'':'s'}</div></div>
+    <button class="btn ghost" id="run-end">Corregir</button></header>
+  <div class="bar rise" style="animation-delay:.02s;margin:6px 0 16px"><i style="width:${Math.round(100*answered/n)}%"></i></div>
+  <div class="card rise" style="animation-delay:.04s">
+    <div class="qnum">${esc(trun.bank.bank)}${q.qid ? ` · <span class="mut small">${esc(q.qid)}</span>` : ''}</div>
+    <div class="qtext">${esc(q.question)}</div>
+    <div class="mt" id="opts">
+      ${q.options.map((o,j)=>`<button class="quiz-opt opt ${trun.resp[q.id]===j?'picked':''}" data-opt="${j}"><span class="opt-letter">${'ABCD'[j]}</span><span>${esc(o)}</span></button>`).join('')}
+    </div>
+    <div class="row" style="margin-top:14px">
+      <button class="btn ghost grow" id="run-prev" ${trun.i===0?'disabled':''}>Anterior</button>
+      <button class="btn grow" id="run-next2">${trun.i+1<n?'Siguiente':'Corregir'}</button>
+    </div>
+    <div class="mut small" style="margin-top:10px">Toca una opción para marcarla; tócala de nuevo para dejarla en blanco.</div>
+  </div>`)); bindNav();
+  app.querySelector('[data-back]').onclick = () => openBank(trun.bank);
+  document.getElementById('run-end').onclick = () => {
+    const blank = n - Object.keys(trun.resp).length;
+    if (!Object.keys(trun.resp).length) return openBank(trun.bank);
+    if (blank > 0 && !confirm(`Quedan ${blank} sin responder. Cuentan como falladas. ¿Corregir ya?`)) return;
+    finishRun();
+  };
+  app.querySelectorAll('#opts .quiz-opt').forEach(btn => btn.onclick = () => {
+    const chosen = +btn.dataset.opt;
+    if (trun.resp[q.id] === chosen) delete trun.resp[q.id]; else trun.resp[q.id] = chosen;
+    app.querySelectorAll('#opts .quiz-opt').forEach((b,j) => b.classList.toggle('picked', trun.resp[q.id] === j));
+  });
+  const pv = document.getElementById('run-prev');
+  if (pv) pv.onclick = () => { if (trun.i > 0) { trun.i--; renderRunEnd(); } };
+  document.getElementById('run-next2').onclick = () => {
+    if (trun.i + 1 < n) { trun.i++; renderRunEnd(); }
+    else document.getElementById('run-end').click();
+  };
+}
+
 async function finishRun() {
+  if (trun.corr === 'end') {
+    trun.answers = trun.list.map(q => ({ question_id: q.id,
+      chosen: (trun.resp[q.id] !== undefined ? trun.resp[q.id] : null),
+      correct: trun.resp[q.id] === q.correct }));
+  }
   const total = trun.answers.length;
   const score = trun.answers.filter(a=>a.correct).length;
   h(shell(`<header class="top rise"><div class="grow"><h1 class="small-h">${esc(trun.bank.bank)}</h1><div class="sub">Guardando resultado...</div></div></header>`)); bindNav();
@@ -936,42 +1003,48 @@ function renderResult(score, total, saved) {
   const pct = total ? Math.round(100*score/total) : 0;
   const byId = Object.fromEntries(trun.list.map(q=>[q.id,q]));
   const fails = trun.answers.filter(a=>!a.correct);
+  const blanks = trun.answers.filter(a => a.chosen === null || a.chosen === undefined).length;
   h(shell(`
   <header class="top rise"><div class="grow"><h1 class="small-h">${esc(trun.bank.bank)}</h1>
   <div class="sub">Resultado del test</div></div></header>
   <div class="card center rise" style="animation-delay:.04s">
     <div style="font-size:38px;font-weight:800">${score}/${total}</div>
     <div class="mt"><span class="pill ${pct>=80?'ok':pct>=50?'acc':'warn'}">${pct}%</span></div>
+    <div class="mut small mt">${score} correcta${score===1?'':'s'} · ${fails.length - blanks} fallada${(fails.length-blanks)===1?'':'s'}${blanks ? ' · ' + blanks + ' en blanco' : ''}</div>
     <div class="mut small mt">${saved ? 'Guardado en tu historial' : 'No se pudo guardar en el historial'}</div>
   </div>
-  ${fails.length ? `<div class="sec rise" style="animation-delay:.08s"><h2>Falladas (${fails.length})</h2></div>` +
+  ${fails.length ? `<div class="sec rise" style="animation-delay:.08s"><h2>Falladas${blanks ? ' y en blanco' : ''} (${fails.length})</h2></div>` +
     fails.map((a,i)=>{ const q = byId[a.question_id]; if(!q) return ''; return `
     <div class="card fail-q rise" style="animation-delay:${.1+i*.03}s">
       <div class="qtext small-q">${esc(q.question)}</div>
-      <div class="fail-line bad">Tu respuesta: ${esc(q.options[a.chosen])}</div>
+      <div class="fail-line bad">${(a.chosen===null||a.chosen===undefined) ? 'Tu respuesta: en blanco' : 'Tu respuesta: ' + esc(q.options[a.chosen])}</div>
       <div class="fail-line good">Correcta: ${esc(q.options[q.correct])}</div>
       ${q.explanation?`<div class="mut small mt">${esc(q.explanation)}</div>`:''}
     </div>`;}).join('') : `<div class="card center rise" style="animation-delay:.08s"><b>¡Pleno!</b><div class="mut small mt">Ningún fallo en este test 🎉</div></div>`}
   <div class="row mt">
-    ${fails.length ? `<button class="btn grow" id="res-failed">Repetir falladas</button>` : ''}
+    ${fails.length ? `<button class="btn grow" id="res-failed">Repetir ${blanks ? 'falladas y en blanco' : 'falladas'}</button>` : ''}
     <button class="btn primary grow" id="res-back">Volver</button>
   </div>`)); bindNav();
   document.getElementById('res-back').onclick = () => openBank(trun.bank);
   const rf = document.getElementById('res-failed');
-  if (rf) rf.onclick = () => startTestRun(trun.bank, { mode: 'lastFailed' });
+  if (rf) rf.onclick = () => startTestRun(trun.bank, { mode: 'lastFailed', corr: 'now' });
 }
 
 function openBank(b) {
   h(shell(vTestBank(b))); bindNav();
   app.querySelector('[data-back]').onclick = () => { tab='tests'; render(); };
-  let prepCount = 25;
+  let prepCount = 25, prepCorr = 'end';
   app.querySelectorAll('[data-tcount]').forEach(c => c.onclick = () => {
     prepCount = +c.dataset.tcount;
     app.querySelectorAll('[data-tcount]').forEach(x => x.classList.toggle('on', x === c));
   });
-  document.getElementById('bt-start').onclick = () => startTestRun(b, { count: prepCount });
+  app.querySelectorAll('[data-tcorr]').forEach(c => c.onclick = () => {
+    prepCorr = c.dataset.tcorr;
+    app.querySelectorAll('[data-tcorr]').forEach(x => x.classList.toggle('on', x === c));
+  });
+  document.getElementById('bt-start').onclick = () => startTestRun(b, { count: prepCount, corr: prepCorr });
   const bf = document.getElementById('bt-failed');
-  if (bf) bf.onclick = () => startTestRun(b, { mode: 'failed' });
+  if (bf) bf.onclick = () => startTestRun(b, { mode: 'failed', corr: 'now' });
 }
 
 /* ---------- Cuenta / Personalización ---------- */
@@ -1191,7 +1264,7 @@ function openLesson(l) {
     document.getElementById('quiz-out').innerHTML =
       `<div class="card center mt"><div style="font-size:30px;font-weight:800">${score}/${quiz.length}</div><div class="mut small">${score===quiz.length?'¡Perfecto! 🎉':'Repasa los fallos arriba y mañana seguimos 💪'}</div></div>` +
       (nx ? `<button class="btn primary block" id="quiz-next" style="margin-top:10px">Siguiente sesión: ${esc(nx.lesson.title)}</button>`
-          : `<div class="card center mt"><div class="mut small">Tanda completada. Pídele a Helena la siguiente tanda cuando quieras seguir.</div></div>`);
+          : `<div class="card center mt"><div class="mut small">Tanda completada. Helena prepara la siguiente tanda y aparecerá aquí cuando esté lista.</div></div>`);
     const qn = document.getElementById('quiz-next');
     if (qn) qn.onclick = () => openLesson(nx.lesson);
   };

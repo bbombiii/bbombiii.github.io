@@ -24,3 +24,13 @@ create table if not exists agenda_hidden(
 alter table agenda_hidden enable row level security;
 
 create policy "solo samuel" on agenda_hidden for all using ((auth.jwt()->>'email') in ('samuelvillamancueto18@gmail.com','samuelvillamancueto@gmail.com')) with check ((auth.jwt()->>'email') in ('samuelvillamancueto18@gmail.com','samuelvillamancueto@gmail.com'));
+
+create table if not exists agenda_cal_hidden(
+  calendar_id text primary key,
+  name text not null default '',
+  created_at timestamptz not null default now()
+);
+
+alter table agenda_cal_hidden enable row level security;
+
+create policy "solo samuel" on agenda_cal_hidden for all using ((auth.jwt()->>'email') in ('samuelvillamancueto18@gmail.com','samuelvillamancueto@gmail.com')) with check ((auth.jwt()->>'email') in ('samuelvillamancueto18@gmail.com','samuelvillamancueto@gmail.com'));
