@@ -961,7 +961,16 @@ const bankCardMeta = (bank, st) => {
 function vTests() {
   const subs = [...new Set(BANKS.map(b=>b.subject))];
   const dueTests = cache.testStates.filter(isDue);
+  const savedRun = loadSavedRun();
   return `${header('Tests','Bancos SMR de tus PDF: un test de 100 por tema')}
+  ${savedRun ? `<div class="card rise" style="animation-delay:.03s"><div class="lesson-row">
+    <span class="lang-badge ja">▶</span>
+    <div class="grow"><b>Test a medias: ${esc(savedRun.bank.bank)}</b>
+    <div class="meta">Pregunta ${(savedRun.i||0)+1} de ${savedRun.list.length}${savedRun.sim ? ' · simulacro en curso' : ''} · se retoma donde lo dejaste</div></div></div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn primary grow" id="ts-resume">Continuar</button>
+      <button class="btn ghost grow" id="ts-discard">Descartar</button>
+    </div></div>` : ''}
   ${dueTests.length ? `<div class="card clickable rise" style="animation-delay:.04s" id="ts-review"><div class="lesson-row">
     <span class="lang-badge en">🔁</span>
     <div class="grow"><b>Repasar hoy · ${dueTests.length} pregunta${dueTests.length===1?'':'s'}</b>
@@ -1036,7 +1045,38 @@ function vTestBank(b) {
 
 let trun = null;
 
+/* V1.2.0: el intento activo sobrevive a recargas y a irse a background */
+const runKey = () => 'salaTestRun:' + (session && session.user && session.user.id ? session.user.id : 'anon');
+function saveRun() {
+  try {
+    if (!trun) return;
+    localStorage.setItem(runKey(), JSON.stringify({ v:1, ts: Date.now(), bank: trun.bank,
+      list: trun.list, i: trun.i, answers: trun.answers || [], resp: trun.resp || {},
+      corr: trun.corr, sim: trun.sim || null }));
+  } catch(e) {}
+}
+function loadSavedRun() {
+  try {
+    const r = JSON.parse(localStorage.getItem(runKey()) || 'null');
+    if (!r || r.v !== 1 || !r.list || !r.list.length) return null;
+    if (Date.now() - (r.ts || 0) > 7*86400000) { localStorage.removeItem(runKey()); return null; }
+    return r;
+  } catch(e) { return null; }
+}
+function clearSavedRun() { try { localStorage.removeItem(runKey()); } catch(e) {} }
+function restoreRun(r) {
+  trun = { bank: r.bank, list: r.list, i: r.i || 0, answers: r.answers || [], resp: r.resp || {},
+           locked: false, corr: r.corr || 'now', sim: r.sim || null };
+  if (trun.sim && trun.sim.deadline && Date.now() > trun.sim.deadline) { finishRun(); return; }
+  renderRun();
+}
+
 async function startTestRun(b, opts = {}) {
+  const prev = loadSavedRun();
+  if (prev && prev.bank && prev.bank.bank && (prev.i > 0 || (prev.answers||[]).length || Object.keys(prev.resp||{}).length)) {
+    if (!confirm(`Tienes un test a medias (${prev.bank.bank}, pregunta ${(prev.i||0)+1} de ${prev.list.length}). ¿Descartarlo y empezar este?`)) return;
+    clearSavedRun();
+  }
   h(shell(`<header class="top rise"><button class="icon-btn" data-back>${ic('back',18)}</button><div class="grow"><h1 class="small-h">${esc(b.bank)}</h1><div class="sub">Cargando preguntas...</div></div></header>`)); bindNav();
   app.querySelector('[data-back]').onclick = () => openBank(b);
   const { data } = await sb.from('test_questions').select('*').eq('bank', b.bank).order('ord');
@@ -1059,6 +1099,7 @@ async function startTestRun(b, opts = {}) {
   if (opts.count && list.length > opts.count) list = list.slice(0, opts.count);
   trun = { bank:b, list, i:0, answers:[], locked:false, corr: opts.corr || 'now', resp: {} };
   if (opts.sim) trun.sim = { total: list.length * 45, deadline: 0 };
+  saveRun();
   renderRun();
 }
 
@@ -1080,11 +1121,16 @@ function renderRun() {
       ${q.options.map((o,j)=>`<button class="quiz-opt opt" data-opt="${j}"><span class="opt-letter">${'ABCD'[j]}</span><span>${esc(o)}</span></button>`).join('')}
     </div>
     <div id="expl"></div>
-  </div>`)); bindNav();
+  </div>
+  <button class="btn ghost block" id="run-save-exit" style="margin-top:10px">Guardar y salir</button>`)); bindNav();
   app.querySelector('[data-back]').onclick = () => openBank(trun.bank);
   document.getElementById('run-end').onclick = () => {
     if (!trun.answers.length) return openBank(trun.bank);
     if (confirm(`¿Corregir ya con las ${trun.answers.length} respondidas?`)) finishRun();
+  };
+  document.getElementById('run-save-exit').onclick = () => {
+    if (trun.sim && !confirm('El reloj del simulacro sigue corriendo aunque salgas: si llega a cero, se corregirá solo con lo que lleves respondido. ¿Guardar y salir?')) return;
+    saveRun(); openBank(trun.bank);
   };
   app.querySelectorAll('#opts .quiz-opt').forEach(btn => btn.onclick = () => {
     if (trun.locked) return;
@@ -1092,6 +1138,7 @@ function renderRun() {
     const chosen = +btn.dataset.opt;
     const ok = chosen === q.correct;
     trun.answers.push({ question_id:q.id, chosen, correct:ok });
+    saveRun();
     app.querySelectorAll('#opts .quiz-opt').forEach((b,j)=>{
       b.disabled = true;
       if (j===q.correct) b.classList.add('right');
@@ -1102,6 +1149,7 @@ function renderRun() {
        <button class="btn primary block" id="run-next">${trun.i+1<trun.list.length?'Siguiente':'Ver resultado'}</button>`;
     document.getElementById('run-next').onclick = () => {
       trun.i++; trun.locked = false;
+      saveRun();
       if (trun.i < trun.list.length) renderRun(); else finishRun();
     };
     const main = app.querySelector('main');
@@ -1132,8 +1180,14 @@ function renderRunEnd() {
       <button class="btn grow" id="run-next2">${trun.i+1<n?'Siguiente':'Corregir'}</button>
     </div>
     <div class="mut small" style="margin-top:10px">Toca una opción para marcarla; tócala de nuevo para dejarla en blanco.</div>
-  </div>`)); bindNav();
+  </div>
+  <button class="btn ghost block" id="run-save-exit2" style="margin-top:10px">Guardar y salir</button>`)); bindNav();
   app.querySelector('[data-back]').onclick = () => openBank(trun.bank);
+  const se2 = document.getElementById('run-save-exit2');
+  if (se2) se2.onclick = () => {
+    if (trun.sim && !confirm('El reloj del simulacro sigue corriendo aunque salgas: si llega a cero, se corregirá solo con lo que lleves respondido. ¿Guardar y salir?')) return;
+    saveRun(); openBank(trun.bank);
+  };
   document.getElementById('run-end').onclick = () => {
     const blank = n - Object.keys(trun.resp).length;
     if (!Object.keys(trun.resp).length) return openBank(trun.bank);
@@ -1143,12 +1197,13 @@ function renderRunEnd() {
   app.querySelectorAll('#opts .quiz-opt').forEach(btn => btn.onclick = () => {
     const chosen = +btn.dataset.opt;
     if (trun.resp[q.id] === chosen) delete trun.resp[q.id]; else trun.resp[q.id] = chosen;
+    saveRun();
     app.querySelectorAll('#opts .quiz-opt').forEach((b,j) => b.classList.toggle('picked', trun.resp[q.id] === j));
   });
   const pv = document.getElementById('run-prev');
-  if (pv) pv.onclick = () => { if (trun.i > 0) { trun.i--; renderRunEnd(); } };
+  if (pv) pv.onclick = () => { if (trun.i > 0) { trun.i--; saveRun(); renderRunEnd(); } };
   document.getElementById('run-next2').onclick = () => {
-    if (trun.i + 1 < n) { trun.i++; renderRunEnd(); }
+    if (trun.i + 1 < n) { trun.i++; saveRun(); renderRunEnd(); }
     else document.getElementById('run-end').click();
   };
   if (trun.sim) {
@@ -1169,6 +1224,7 @@ function renderRunEnd() {
 
 async function finishRun() {
   clearInterval(trun.timerId);
+  clearSavedRun();
   if (trun.corr === 'end') {
     trun.answers = trun.list.map(q => ({ question_id: q.id,
       chosen: (trun.resp[q.id] !== undefined ? trun.resp[q.id] : null),
@@ -1260,6 +1316,7 @@ async function startReviewRun() {
   const { data } = await sb.from('test_questions').select('*').in('id', ids);
   if (!data || !data.length) { tab='tests'; render(); return; }
   trun = { bank:{ bank:'Repaso de hoy', subject:'Repaso' }, list: kzShuffle(data), i:0, answers:[], locked:false, corr:'now', resp:{} };
+  saveRun();
   renderRun();
 }
 
@@ -1465,6 +1522,10 @@ function bindActions() {
   app.querySelectorAll('[data-bank]').forEach(b => b.onclick = () => openBank(BANKS.find(x=>x.bank===b.dataset.bank)));
   const tsr = document.getElementById('ts-review');
   if (tsr) tsr.onclick = () => startReviewRun();
+  const tsResume = document.getElementById('ts-resume');
+  if (tsResume) tsResume.onclick = () => { const r = loadSavedRun(); if (r) restoreRun(r); };
+  const tsDiscard = document.getElementById('ts-discard');
+  if (tsDiscard) tsDiscard.onclick = () => { if (confirm('¿Descartar el test a medias? Se perderán las respuestas no corregidas.')) { clearSavedRun(); render(); } };
 }
 
 function openNote(n) {
@@ -1573,7 +1634,7 @@ async function boot() {
   sb = createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY);
   sb.auth.onAuthStateChange(async (_e, s) => {
     session = s;
-    if (session) { await loadAll(); tab='hoy'; render(); }
+    if (session) { await loadAll(); const sr = loadSavedRun(); if (sr) { restoreRun(sr); } else { tab='hoy'; render(); } }
     else renderLogin();
   });
   const { data } = await sb.auth.getSession();
