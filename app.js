@@ -452,6 +452,7 @@ function vKana() {
       <div class="chips" style="flex-wrap:wrap">${kanaGroups().map(g => `<div class="chip ${kz.sel.includes(g.id)?'on':''}" data-kg="${g.id}">${esc(g.name)}</div>`).join('')}</div>
       <button class="btn primary block" id="kz-start" style="margin-top:16px" ${total?'':'disabled'}>${kz.mode==='trace'?'Empezar a trazar':kz.mode==='listen'?'Empezar el dictado':'Empezar'} · ${total} kana</button>
       ${kz.mode==='listen' ? `<div class="mut small" style="margin-top:6px">Oirás cada kana con la voz del dispositivo y eliges cuál era. Usa la voz japonesa de tu navegador o sistema.</div>` : ''}
+      ${kz.noVoice && kz.mode==='listen' ? `<div class="notice" style="margin-top:8px">Este navegador no tiene una voz japonesa instalada; sin ella el dictado no puede sonar. En el móvil suele venir con el sistema.</div>` : ''}
       ${dueKana.length ? `<button class="btn block" id="kz-review" style="margin-top:8px">${ic('sparkle',16,1.8)} Repasar hoy · ${dueKana.length} kana tocan</button>` : ''}
     </div>
     ${fails.length ? `<div class="sec rise"><h2>Dónde fallas</h2></div>
@@ -518,7 +519,7 @@ function vKana() {
 }
 
 function bindKana() {
-  app.querySelectorAll('[data-kmode]').forEach(c => c.onclick = () => { kz.mode = c.dataset.kmode; localStorage.setItem('salaKanaMode', kz.mode); renderKana(); });
+  app.querySelectorAll('[data-kmode]').forEach(c => c.onclick = () => { kz.mode = c.dataset.kmode; kz.noVoice = false; localStorage.setItem('salaKanaMode', kz.mode); renderKana(); });
   app.querySelectorAll('[data-kscript]').forEach(c => c.onclick = () => { kz.script = c.dataset.kscript; localStorage.setItem('salaKanaScript', kz.script); renderKana(); });
   app.querySelectorAll('[data-kg]').forEach(c => c.onclick = () => {
     const id = c.dataset.kg;
@@ -536,7 +537,7 @@ function bindKana() {
       kz.phase = 'trace'; renderKana(); return;
     }
     if (kz.mode === 'listen') {
-      if (!voiceFor('ja')) { alert('Este navegador no tiene una voz japonesa instalada; sin ella el dictado no puede sonar. En el móvil suele venir con el sistema.'); return; }
+      if (!voiceFor('ja')) { kz.noVoice = true; renderKana(); return; }
       const pool = items.map(it => it[0]);
       kz.deck = kzShuffle(items.map(it => [...it]));
       kz.deck.forEach(it => { it.opts = kzShuffle([it[0], ...kzShuffle(pool.filter(x => x !== it[0])).slice(0,3)]); });
