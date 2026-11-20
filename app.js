@@ -112,7 +112,7 @@ async function calApi(action, payload = {}) {
   if (data && data.error) return data;
   return (data && data.data !== undefined) ? data.data : data;
 }
-function calMonday(off = 0) { const d = new Date(); const dow = (d.getDay() + 6) % 7; d.setDate(d.getDate() - dow + off * 7); d.setHours(0,0,0,0); return d; }
+function calStart(off = 0) { const d = new Date(); d.setDate(d.getDate() + off * 7); d.setHours(0,0,0,0); return d; }
 const calDayKey = d => d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
 const DOW = ['lunes','martes','miércoles','jueves','viernes','sábado','domingo'];
 const evStart = ev => ev.start.dateTime ? new Date(ev.start.dateTime) : new Date(ev.start.date + 'T00:00:00');
@@ -131,7 +131,7 @@ async function agendaLoad(withCalendars) {
     } else if (!cal.sel) cal.sel = cal.calendars.map(c => c.id);
     localStorage.setItem('salaCalSel', JSON.stringify(cal.sel));
   }
-  const m = calMonday(cal.weekOff), e = new Date(m); e.setDate(e.getDate() + 7);
+  const m = calStart(cal.weekOff), e = new Date(m); e.setDate(e.getDate() + 7);
   const selCals = cal.calendars.filter(c => cal.sel.includes(c.id));
   const res = await Promise.all(selCals.map(async c => {
     const r = await calApi('list_events', { calendarId: c.id, timeMin: m.toISOString(), timeMax: e.toISOString() });
@@ -154,7 +154,7 @@ function vAgenda() {
      <div class="sub">Ve y gestiona los eventos de tus calendarios de Google sin salir de la Sala. Solo tú ves esto.</div>
      <button class="btn primary block" id="ag-connect" style="margin-top:14px">Conectar Google Calendar</button></div>`;
 
-  const m = calMonday(cal.weekOff);
+  const m = calStart(cal.weekOff);
   const days = Array.from({length: 7}, (_, i) => { const d = new Date(m); d.setDate(d.getDate() + i); return d; });
   const range = days[0].toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }) + ' - ' + days[6].toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
   const chips = cal.calendars.map(c =>
@@ -163,7 +163,7 @@ function vAgenda() {
   let out = header('Agenda', range,
     `<button class="icon-btn" id="ag-new" title="Nuevo evento">${ic('plus')}</button>`);
   out += `<div class="ag-weeknav rise">
-      <button class="icon-btn" id="ag-prev">${ic('back')}</button>
+      <button class="icon-btn" id="ag-prev"${cal.weekOff === 0 ? ' disabled style="opacity:.35"' : ''}>${ic('back')}</button>
       <button class="btn ghost" id="ag-today">Hoy</button>
       <button class="icon-btn" id="ag-next" style="transform:scaleX(-1)">${ic('back')}</button>
       <button class="btn ghost" id="ag-disc" style="margin-left:auto">Desconectar</button>
@@ -177,7 +177,7 @@ function vAgenda() {
     const evs = cal.events.filter(ev => calDayKey(evStart(ev)) === k && (cal.showHidden || !hkeys.has(ev._cal.id + '|' + ev.id)));
     if (!evs.length && k !== todayK) continue;
     out += `<div class="ag-day rise ${k === todayK ? 'ag-today' : ''}">
-      <div class="ag-dayhead">${DOW[(d.getDay()+6)%7]} <span>${d.getDate()}</span></div>
+      <div class="ag-dayhead">${DOW[(d.getDay()+6)%7]} <span>${d.getDate()}</span>${k === todayK ? ' <span class="ag-hoypill">hoy</span>' : ''}</div>
       ${evs.length ? evs.map(ev => {
         const time = ev.start.dateTime
           ? new Date(ev.start.dateTime).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}) +
@@ -261,7 +261,7 @@ function bindAgenda() {
     agendaLoad(false);
   });
   const prev = document.getElementById('ag-prev'), next = document.getElementById('ag-next'), today = document.getElementById('ag-today');
-  if (prev) prev.onclick = () => { cal.weekOff--; agendaLoad(false); };
+  if (prev) prev.onclick = () => { cal.weekOff = Math.max(0, cal.weekOff - 1); agendaLoad(false); };
   if (next) next.onclick = () => { cal.weekOff++; agendaLoad(false); };
   if (today) today.onclick = () => { cal.weekOff = 0; agendaLoad(false); };
   const disc = document.getElementById('ag-disc');

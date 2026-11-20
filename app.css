@@ -244,6 +244,7 @@ a{color:var(--acc)}
 .ag-dayhead{font-size:13px;font-weight:700;color:var(--mut);text-transform:capitalize;padding:8px 4px 6px}
 .ag-dayhead span{font-weight:600}
 .ag-today .ag-dayhead{color:var(--acc)}
+.ag-hoypill{background:var(--acc);color:#fff;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;padding:2px 7px;border-radius:99px;margin-left:6px}
 .ag-ev{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:11px 12px;margin-bottom:6px;color:var(--txt);cursor:pointer;transition:background .15s}
 .ag-ev:active{background:var(--surface2)}
 .ag-ev-main{flex:1;min-width:0}
