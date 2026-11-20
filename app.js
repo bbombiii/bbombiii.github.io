@@ -53,7 +53,7 @@ const header = (title, sub, extra='') =>
   `<header class="top rise"><div class="grow"><h1 class="small-h">${title}</h1>${sub?`<div class="sub">${sub}</div>`:''}</div>${extra}</header>`;
 
 async function loadAll() {
-  const [t,n,tp,l,r,res,ta,ks,tqs,hh,hc] = await Promise.all([
+  const [t,n,tp,l,r,res,ta,ks,tqs,hh,hc,tsm] = await Promise.all([
     sb.from('tasks').select('*').order('created_at',{ascending:false}),
     sb.from('notes').select('*').order('updated_at',{ascending:false}),
     sb.from('topics').select('*').order('ord'),
@@ -65,11 +65,12 @@ async function loadAll() {
     sb.from('test_question_state').select('*'),
     sb.from('agenda_hidden').select('*'),
     sb.from('agenda_cal_hidden').select('*'),
+    sb.from('test_summaries').select('*').order('created_at',{ascending:false}),
   ]);
   const { data: persRows } = await sb.from('personalizacion').select('*').order('created_at',{ascending:false});
-  cache = { tasks:t.data||[], notes:n.data||[], topics:tp.data||[], lessons:l.data||[], resources:r.data||[], results:res.data||[], testAttempts:ta.data||[], pers:persRows||[], testStates:tqs.data||[], hidden:hh.data||[], hiddenCals:(typeof hc!=='undefined'?hc.data:null)||[] };
+  cache = { tasks:t.data||[], notes:n.data||[], topics:tp.data||[], lessons:l.data||[], resources:r.data||[], results:res.data||[], testAttempts:ta.data||[], pers:persRows||[], testStates:tqs.data||[], hidden:hh.data||[], hiddenCals:(typeof hc!=='undefined'?hc.data:null)||[], testSummaries:(typeof tsm!=='undefined'?tsm.data:null)||[] };
   kanaStats = {};
-  (ks.data||[]).forEach(row => { kanaStats[row.kana] = { ok:row.ok, fail:row.fail, last_fail:row.last_fail }; });
+  (ks.data||[]).forEach(row => { kanaStats[row.kana] = { ok:row.ok, fail:row.fail, last_fail:row.last_fail, streak:row.streak||0, due:row.due||null }; });
   persSigned = {};
   const imgs = cache.pers.filter(r=>r.tipo==='imagen' && r.imagen_path).map(r=>r.imagen_path);
   if (imgs.length) {
@@ -1020,6 +1021,12 @@ function vTestBank(b) {
     <button class="btn primary block" id="bt-start" style="margin-top:6px">${ic('play',17,2)} Empezar test</button>
   </div>
   ${failedEver>0 ? `<button class="btn block rise" style="animation-delay:.11s" id="bt-failed">${ic('sparkle',17,1.8)} Repasar las que te cuestan (${failedEver})</button>` : ''}
+  ${(() => { const sums = (cache.testSummaries||[]).filter(x => x.bank === b.bank && x.estado === 'lista');
+    return sums.length ? `<div class="sec rise" style="animation-delay:.13s"><h2>Resúmenes del tema</h2><span class="count">${sums.length}</span></div>` +
+    sums.slice(0,5).map((sm,i) => `<div class="card clickable rise" style="animation-delay:${.14+i*.04}s" data-sum="${sm.id}"><div class="lesson-row">
+      <span class="link-ic">${ic('note',18)}</span>
+      <div class="grow"><b>Resumen del ${new Date(sm.created_at).toLocaleDateString('es-ES',{day:'numeric',month:'short'})}</b><div class="meta">Tema completo, con énfasis en lo que fallaste</div></div>
+      ${ic('chev',16)}</div></div>`).join('') : ''; })()}
   <div class="sec rise" style="animation-delay:.14s"><h2>Historial</h2><span class="count">${ats.length}</span></div>
   ${ats.length ? ats.slice(0,10).map((a,i)=>{
       const pct = Math.round(100*a.score/a.total);
@@ -1194,10 +1201,15 @@ async function finishRun() {
       });
     }
   }
-  renderResult(score, total, !!att);
+  if (att) {
+    const { data: srow } = await sb.from('test_summaries').insert({ attempt_id: att.id, bank: trun.bank.bank, estado: 'pendiente' }).select().single();
+    if (srow) cache.testSummaries.unshift(srow);
+  }
+  await renderResult(score, total, att);
 }
 
-function renderResult(score, total, saved) {
+async function renderResult(score, total, att) {
+  const saved = !!att;
   const pct = total ? Math.round(100*score/total) : 0;
   const byId = Object.fromEntries(trun.list.map(q=>[q.id,q]));
   const fails = trun.answers.filter(a=>!a.correct);
@@ -1211,6 +1223,8 @@ function renderResult(score, total, saved) {
     <div class="mut small mt">${score} correcta${score===1?'':'s'} · ${fails.length - blanks} fallada${(fails.length-blanks)===1?'':'s'}${blanks ? ' · ' + blanks + ' en blanco' : ''}</div>
     <div class="mut small mt">${saved ? 'Guardado en tu historial' : 'No se pudo guardar en el historial'}</div>
   </div>
+  ${att ? `<div class="sec rise" style="animation-delay:.06s"><h2>Resumen del tema</h2></div>
+  <div class="card rise" id="resumen-box" style="animation-delay:.07s"><div class="mut small">Helena preparará un resumen del tema completo, con más detalle y ejemplos en lo que has fallado o dejado en blanco, y unas preguntas nuevas para comprobar que lo has entendido. Estará en esta pantalla y en el banco en unos minutos.</div></div>` : ''}
   ${fails.length ? `<div class="sec rise" style="animation-delay:.08s"><h2>Falladas${blanks ? ' y en blanco' : ''} (${fails.length})</h2></div>` +
     fails.map((a,i)=>{ const q = byId[a.question_id]; if(!q) return ''; return `
     <div class="card fail-q rise" style="animation-delay:${.1+i*.03}s">
@@ -1230,6 +1244,12 @@ function renderResult(score, total, saved) {
   document.getElementById('res-back').onclick = () => openBank(trun.bank);
   const rf = document.getElementById('res-failed');
   if (rf) rf.onclick = () => startTestRun(trun.bank, { mode: 'lastFailed', corr: 'now' });
+  if (att) {
+    const { data:sums } = await sb.from('test_summaries').select('*').eq('attempt_id', att.id).order('created_at', { ascending:false }).limit(1);
+    const sm = sums && sums[0];
+    const box = document.getElementById('resumen-box');
+    if (box && sm && sm.estado === 'lista') box.innerHTML = `<div class="lesson-body">${sm.body}</div>`;
+  }
 }
 
 async function startReviewRun() {
@@ -1262,6 +1282,17 @@ function openBank(b) {
   document.getElementById('bt-start').onclick = () => startTestRun(b, { count: prepCount, corr: prepCorr, sim: prepSim });
   const bf = document.getElementById('bt-failed');
   if (bf) bf.onclick = () => startTestRun(b, { mode: 'failed', corr: 'now' });
+  app.querySelectorAll('[data-sum]').forEach(x => x.onclick = () => openSummary(+x.dataset.sum, b));
+}
+
+function openSummary(id, b) {
+  const sm = (cache.testSummaries||[]).find(x => x.id === id);
+  if (!sm) return;
+  h(shell(`<header class="top rise"><button class="icon-btn" data-back>${ic('back',18)}</button>
+    <div class="grow"><h1 class="small-h">Resumen del tema</h1>
+    <div class="sub">${esc(sm.bank)} · ${new Date(sm.created_at).toLocaleDateString('es-ES',{day:'numeric',month:'short',year:'numeric'})}</div></div></header>
+  <div class="card lesson-body rise" style="animation-delay:.05s">${sm.body}</div>`)); bindNav();
+  app.querySelector('[data-back]').onclick = () => { if (b) openBank(b); else { tab='tests'; render(); } };
 }
 
 /* ---------- Cuenta / Personalización ---------- */
