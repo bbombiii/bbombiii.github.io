@@ -831,7 +831,7 @@ function vTestBank(b) {
   </div>` : ''}
   <div class="card rise" style="animation-delay:.08s">
     <b>Preparar test</b>
-    <div class="mut small" style="margin:4px 0 10px">Elige la longitud. Las preguntas salen en orden aleatorio y se corrigen al momento, con explicación.</div>
+    <div class="mut small" style="margin:4px 0 10px">Elige la longitud y el modo de corrección. Las preguntas salen en orden aleatorio.</div>
     <div class="chips">${[10,25,50,100].map(n => `<div class="chip ${n===25?'on':''}" data-tcount="${n}">${n===100?'Todas':n}</div>`).join('')}</div>
     <div class="chips" style="margin-top:8px">
       <div class="chip on" data-tcorr="end">Corregir al final</div>
