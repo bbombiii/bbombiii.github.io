@@ -535,11 +535,12 @@ function bindKana() {
     const redraw = () => {
       ctx.clearRect(0, 0, 640, 640);
       if (kz.showGuide !== false) {
-        ctx.font = '400px "Hiragino Sans","Noto Sans JP","Yu Gothic",sans-serif';
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillStyle = 'rgba(255,255,255,.08)';
-        ctx.fillText(item[0], 320, 350);
-        drawKanaOrder(ctx, item[0]);
+        if (!drawKanaOrder(ctx, item[0])) {
+          ctx.font = '400px "Hiragino Sans","Noto Sans JP","Yu Gothic",sans-serif';
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillStyle = 'rgba(255,255,255,.12)';
+          ctx.fillText(item[0], 320, 350);
+        }
       }
       ctx.lineWidth = 24; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
       ctx.strokeStyle = 'rgba(240,240,246,.92)';
@@ -573,23 +574,29 @@ function kanaPath(d) {
   return p;
 }
 function drawKanaOrder(ctx, str) {
-  const KS = window.KANA_STROKES; if (!KS) return;
+  const KS = window.KANA_STROKES; if (!KS) return false;
   const chars = [...str];
+  if (!chars.every(ch => KS[ch])) return false;
   const layouts = chars.length === 1
     ? [{ ox: 55, oy: 55, sc: 530/109 }]
-    : [{ ox: 40, oy: 40, sc: 340/109 }, { ox: 330, oy: 340, sc: 250/109 }];
+    : [{ ox: 40, oy: 40, sc: 340/109 }, { ox: 330, oy: 330, sc: 250/109 }];
   let n = 0;
   chars.forEach((ch, ci) => {
-    const ds = KS[ch]; if (!ds) return;
+    const ds = KS[ch];
     const L = layouts[ci];
     ds.forEach((d, i) => {
       n++;
       const sp = kanaPath(d);
       const len = sp.getTotalLength();
+      const path = new Path2D(d);
       ctx.save(); ctx.translate(L.ox, L.oy); ctx.scale(L.sc, L.sc);
-      ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-      ctx.strokeStyle = 'rgba(139,148,255,.45)';
-      ctx.stroke(new Path2D(d)); ctx.restore();
+      ctx.lineWidth = 9; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      ctx.strokeStyle = 'rgba(255,255,255,.10)';
+      ctx.stroke(path);
+      ctx.lineWidth = 2.4;
+      ctx.strokeStyle = 'rgba(139,148,255,.5)';
+      ctx.stroke(path);
+      ctx.restore();
       const p0 = sp.getPointAtLength(0);
       const x0 = L.ox + p0.x*L.sc, y0 = L.oy + p0.y*L.sc;
       ctx.beginPath(); ctx.arc(x0, y0, 14, 0, 7);
@@ -604,6 +611,7 @@ function drawKanaOrder(ctx, str) {
       ctx.fillStyle = 'rgba(139,148,255,.95)'; ctx.fill(); ctx.restore();
     });
   });
+  return true;
 }
 
 function vHoy() {
