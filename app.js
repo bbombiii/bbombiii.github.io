@@ -1224,7 +1224,7 @@ async function renderResult(score, total, att) {
     <div class="mut small mt">${saved ? 'Guardado en tu historial' : 'No se pudo guardar en el historial'}</div>
   </div>
   ${att ? `<div class="sec rise" style="animation-delay:.06s"><h2>Resumen del tema</h2></div>
-  <div class="card rise" id="resumen-box" style="animation-delay:.07s"><div class="mut small">Helena preparará un resumen del tema completo, con más detalle y ejemplos en lo que has fallado o dejado en blanco, y unas preguntas nuevas para comprobar que lo has entendido. Estará en esta pantalla y en el banco en unos minutos.</div></div>` : ''}
+  <div class="card rise" id="resumen-box" style="animation-delay:.07s"><div class="mut small">Helena preparará un resumen del tema completo, con más detalle y ejemplos en lo que has fallado o dejado en blanco, y unas preguntas nuevas de comprobación. Puede tardar hasta unos 30-40 minutos; te avisará cuando esté listo y quedará guardado en la ficha del banco.</div></div>` : ''}
   ${fails.length ? `<div class="sec rise" style="animation-delay:.08s"><h2>Falladas${blanks ? ' y en blanco' : ''} (${fails.length})</h2></div>` +
     fails.map((a,i)=>{ const q = byId[a.question_id]; if(!q) return ''; return `
     <div class="card fail-q rise" style="animation-delay:${.1+i*.03}s">
