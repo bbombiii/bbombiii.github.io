@@ -1100,6 +1100,7 @@ async function startTestRun(b, opts = {}) {
   }
   list = kzShuffle([...list]);
   if (opts.count && list.length > opts.count) list = list.slice(0, opts.count);
+  finishingRun = false;
   trun = { bank:b, list, i:0, answers:[], locked:false, corr: opts.corr || 'now', resp: {} };
   if (opts.sim) trun.sim = { total: list.length * 45, deadline: 0 };
   saveRun();
@@ -1226,9 +1227,10 @@ function renderRunEnd() {
 }
 
 let runTimer = null;
+let finishingRun = false;
 async function finishRun() {
-  if (!trun || trun.finishing) return;
-  trun.finishing = true;
+  if (!trun || finishingRun) return;
+  finishingRun = true;
   clearInterval(runTimer); runTimer = null;
   if (trun) clearInterval(trun.timerId);
   clearSavedRun();
@@ -1323,6 +1325,7 @@ async function startReviewRun() {
   app.querySelector('[data-back]').onclick = () => { tab='tests'; render(); };
   const { data } = await sb.from('test_questions').select('*').in('id', ids);
   if (!data || !data.length) { tab='tests'; render(); return; }
+  finishingRun = false;
   trun = { bank:{ bank:'Repaso de hoy', subject:'Repaso' }, list: kzShuffle(data), i:0, answers:[], locked:false, corr:'now', resp:{} };
   saveRun();
   renderRun();
@@ -1642,7 +1645,7 @@ async function boot() {
   sb = createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY);
   sb.auth.onAuthStateChange(async (_e, s) => {
     session = s;
-    if (session) { await loadAll(); const sr = loadSavedRun(); if (sr) { restoreRun(sr); } else { tab='hoy'; render(); } }
+    if (session) { await loadAll(); const sr = loadSavedRun(); if (sr) { if (!trun) restoreRun(sr); } else { tab='hoy'; render(); } }
     else renderLogin();
   });
   const { data } = await sb.auth.getSession();
