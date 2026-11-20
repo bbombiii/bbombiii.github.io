@@ -944,7 +944,7 @@ const bankBadge = s => s==='Servicios' ? 'SRV' : s==='IPE II' ? 'IPE' : 'SOR';
 const bankStats = bank => {
   const l = cache.testAttempts.filter(a => a.bank===bank);
   if (!l.length) return null;
-  const fulls = l.filter(a => a.kind === 'full' || (a.kind == null && a.total >= 100));
+  const fulls = l.filter(a => a.kind === 'full');
   return { n:l.length, best: fulls.length ? Math.max(...fulls.map(a=>Math.round(100*a.score/a.total))) : null, last:l[0] };
 };
 const stateByQid = () => { const m = {}; cache.testStates.forEach(s => { m[s.question_id] = s; }); return m; };
@@ -1056,21 +1056,20 @@ function saveRun() {
     if (!trun) return;
     localStorage.setItem(runKey(), JSON.stringify({ v:1, ts: Date.now(), bank: trun.bank,
       list: trun.list, i: trun.i, answers: trun.answers || [], resp: trun.resp || {},
-      corr: trun.corr, sim: trun.sim || null }));
+      corr: trun.corr, sim: trun.sim || null, full: !!trun.full, review: !!trun.review }));
   } catch(e) {}
 }
 function loadSavedRun() {
   try {
     const r = JSON.parse(localStorage.getItem(runKey()) || 'null');
     if (!r || r.v !== 1 || !r.list || !r.list.length) return null;
-    if (Date.now() - (r.ts || 0) > 7*86400000) { localStorage.removeItem(runKey()); return null; }
     return r;
   } catch(e) { return null; }
 }
 function clearSavedRun() { try { localStorage.removeItem(runKey()); } catch(e) {} }
 function restoreRun(r) {
   trun = { bank: r.bank, list: r.list, i: r.i || 0, answers: r.answers || [], resp: r.resp || {},
-           locked: false, corr: r.corr || 'now', sim: r.sim || null };
+           locked: false, corr: r.corr || 'now', sim: r.sim || null, full: !!r.full, review: !!r.review };
   if (trun.sim && trun.sim.deadline && Date.now() > trun.sim.deadline) { finishRun(); return; }
   renderRun();
 }
@@ -1099,10 +1098,12 @@ async function startTestRun(b, opts = {}) {
     list = list.filter(q=>ids.has(q.id));
     if (!list.length) return openBank(b);
   }
+  const coversAll = !opts.mode && (!opts.count || opts.count >= list.length);
   list = kzShuffle([...list]);
   if (opts.count && list.length > opts.count) list = list.slice(0, opts.count);
   finishingRun = false;
-  trun = { bank:b, list, i:0, answers:[], locked:false, corr: opts.corr || 'now', resp: {} };
+  trun = { bank:b, list, i:0, answers:[], locked:false, corr: opts.corr || 'now', resp: {},
+           full: coversAll, review: opts.mode === 'failed' || opts.mode === 'lastFailed' };
   if (opts.sim) trun.sim = { total: list.length * 45, deadline: 0 };
   saveRun();
   renderRun();
@@ -1244,7 +1245,7 @@ async function finishRun() {
   const score = trun.answers.filter(a=>a.correct).length;
   h(shell(`<header class="top rise"><div class="grow"><h1 class="small-h">${esc(trun.bank.bank)}</h1><div class="sub">Guardando resultado...</div></div></header>`)); bindNav();
   let att = null;
-  const kind = trun.bank.bank === 'Repaso de hoy' ? 'review' : (total >= 100 ? 'full' : 'custom');
+  const kind = (trun.bank.bank === 'Repaso de hoy' || trun.review) ? 'review' : (trun.full ? 'full' : 'custom');
   const { data:attData } = await sb.from('test_attempts').insert({ bank:trun.bank.bank, total, score, kind }).select().single();
   att = attData;
   if (att) {
