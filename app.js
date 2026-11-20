@@ -383,11 +383,32 @@ let kanaStats = {};
 let kz = null;
 const kzShuffle = a => { for (let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; };
 
+/* ---------- V1.2.0: repaso espaciado + voz ---------- */
+const dayStr = (dt=new Date()) => `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+const SRS_DAYS = [1, 3, 7, 16, 35];
+const srsNext = streak => { const d = new Date(); d.setDate(d.getDate() + SRS_DAYS[Math.min(Math.max(streak,1), SRS_DAYS.length) - 1]); return dayStr(d); };
+const srsFailDue = () => { const d = new Date(); d.setDate(d.getDate() + 1); return dayStr(d); };
+const isDue = s => !!(s && s.due && s.due <= dayStr());
+function speakText(txt, lang) {
+  try {
+    const u = new SpeechSynthesisUtterance(txt); u.lang = lang; u.rate = 0.85;
+    const v = speechSynthesis.getVoices().find(x => x.lang && x.lang.toLowerCase().startsWith(lang.slice(0,2)));
+    if (v) u.voice = v;
+    speechSynthesis.cancel(); speechSynthesis.speak(u);
+    return true;
+  } catch(e) { return false; }
+}
+const voiceFor = pre => { try { return speechSynthesis.getVoices().find(x => x.lang && x.lang.toLowerCase().startsWith(pre)) || null; } catch(e) { return null; } };
+if (typeof speechSynthesis !== 'undefined') { try { speechSynthesis.getVoices(); } catch(e) {} }
+
 function kanaHit(k, okAns) {
-  const cur = kanaStats[k] || { ok:0, fail:0, last_fail:null };
+  const cur = kanaStats[k] || { ok:0, fail:0, last_fail:null, streak:0, due:null };
+  const streak = okAns ? (cur.streak||0)+1 : 0;
   const row = { kana:k, ok:cur.ok+(okAns?1:0), fail:cur.fail+(okAns?0:1),
-    last_fail: okAns ? cur.last_fail : new Date().toISOString(), updated_at:new Date().toISOString() };
-  kanaStats[k] = { ok:row.ok, fail:row.fail, last_fail:row.last_fail };
+    last_fail: okAns ? cur.last_fail : new Date().toISOString(),
+    streak, due: okAns ? srsNext(streak) : srsFailDue(),
+    updated_at:new Date().toISOString() };
+  kanaStats[k] = { ok:row.ok, fail:row.fail, last_fail:row.last_fail, streak:row.streak, due:row.due };
   sb.from('kana_stats').upsert(row).then(()=>{});
 }
 
@@ -400,7 +421,7 @@ function openKana() {
   } catch(e) {}
   kz = { phase:'setup', sel: (sel && sel.length ? sel : KANA_GROUPS.filter(g=>g.id!=='d'&&g.id!=='c').map(g=>g.id)),
          script, mode, strokes:[], showGuide:true,
-         deck:[], pos:0, total:0, cleared:0, firstTryOk:0, wrongs:[], fb:null };
+         deck:[], pos:0, total:0, cleared:0, firstTryOk:0, wrongs:[], fb:null, exp:0 };
   renderKana();
 }
 function renderKana() {
@@ -410,9 +431,10 @@ function renderKana() {
 
 function vKana() {
   const head = `<header class="top rise"><button class="icon-btn" data-back>${ic('back',18)}</button>
-    <div class="grow"><h1 class="small-h">Práctica de kana</h1><div class="sub">${kz.script==='kata'?'Katakana':'Hiragana'} · ${kz.mode==='trace'?'traza con el dedo sobre la guía':'escribe la lectura en romaji'}</div></div></header>`;
+    <div class="grow"><h1 class="small-h">Práctica de kana</h1><div class="sub">${kz.script==='kata'?'Katakana':'Hiragana'} · ${kz.mode==='trace'?'traza sobre la guía con orden y dirección':kz.mode==='listen'?'escucha y elige el kana que oyes':'escribe la lectura en romaji'}</div></div></header>`;
   if (kz.phase === 'setup') {
     const total = kanaGroups().filter(g => kz.sel.includes(g.id)).reduce((n,g) => n + g.items.length, 0);
+    const dueKana = Object.entries(kanaStats).filter(([k,st]) => isDue(st) && KANA_READ[k]);
     const fails = Object.entries(kanaStats).filter(([k,s]) => s.fail > 0)
       .sort((a,b) => b[1].fail - a[1].fail || new Date(b[1].last_fail||0) - new Date(a[1].last_fail||0)).slice(0,8);
     return head + `
@@ -420,13 +442,16 @@ function vKana() {
       <div class="chips" style="margin-top:12px">
         <div class="chip ${kz.mode==='read'?'on':''}" data-kmode="read">Leer</div>
         <div class="chip ${kz.mode==='trace'?'on':''}" data-kmode="trace">Trazar</div>
+        <div class="chip ${kz.mode==='listen'?'on':''}" data-kmode="listen">Dictado</div>
       </div>
       <div class="chips">
         <div class="chip ${kz.script==='hira'?'on':''}" data-kscript="hira">Hiragana あ</div>
         <div class="chip ${kz.script==='kata'?'on':''}" data-kscript="kata">Katakana ア</div>
       </div>
       <div class="chips" style="flex-wrap:wrap">${kanaGroups().map(g => `<div class="chip ${kz.sel.includes(g.id)?'on':''}" data-kg="${g.id}">${esc(g.name)}</div>`).join('')}</div>
-      <button class="btn primary block" id="kz-start" style="margin-top:16px" ${total?'':'disabled'}>${kz.mode==='trace'?'Empezar a trazar':'Empezar'} · ${total} kana</button>
+      <button class="btn primary block" id="kz-start" style="margin-top:16px" ${total?'':'disabled'}>${kz.mode==='trace'?'Empezar a trazar':kz.mode==='listen'?'Empezar el dictado':'Empezar'} · ${total} kana</button>
+      ${kz.mode==='listen' ? `<div class="mut small" style="margin-top:6px">Oirás cada kana con la voz del dispositivo y eliges cuál era. Usa la voz japonesa de tu navegador o sistema.</div>` : ''}
+      ${dueKana.length ? `<button class="btn block" id="kz-review" style="margin-top:8px">${ic('sparkle',16,1.8)} Repasar hoy · ${dueKana.length} kana tocan</button>` : ''}
     </div>
     ${fails.length ? `<div class="sec rise"><h2>Dónde fallas</h2></div>
     <div class="card rise">${fails.map(([k,s]) => `<div class="kz-failrow"><span class="kz-k">${k}</span><span class="grow mut">${esc(KANA_READ[k]||'')}</span><span class="pill no">${s.fail}✗</span></div>`).join('')}</div>` : ''}`;
@@ -445,6 +470,19 @@ function vKana() {
            <button class="btn primary block" id="kz-check" style="margin-top:12px">Comprobar</button>`}
     </div>`;
   }
+  if (kz.phase === 'listen') {
+    const q = kz.deck[kz.pos];
+    return head + `
+    <div class="card rise" style="text-align:center">
+      <div class="mut small">${kz.cleared}/${kz.total} · a la primera ${kz.firstTryOk}</div>
+      <div class="bar" style="margin-top:8px"><i style="width:${kz.total?Math.round(kz.cleared/kz.total*100):0}%"></i></div>
+      <div style="margin:18px 0 6px"><button class="btn primary" id="kz-replay">${ic('play',16,2)} Escuchar de nuevo</button></div>
+      <div class="mut small">¿Qué kana has oído?</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px">${q.opts.map(o => `<button class="btn" style="font-size:34px;padding:12px 0" data-kopt="${o}" ${kz.fb?'disabled':''}>${o}</button>`).join('')}</div>
+      ${kz.fb ? `<div class="kz-fb ${kz.fb.ok?'ok':'no'}">${kz.fb.ok?'✓ Correcto':'✗ Era <b>'+q[0]+'</b> ('+esc(q[1])+')'}</div>
+      <button class="btn primary block" id="kz-next">Siguiente</button>` : ''}
+    </div>`;
+  }
   if (kz.phase === 'trace') {
     const item = kz.deck[kz.pos];
     return head + `
@@ -460,7 +498,8 @@ function vKana() {
         <button class="btn ghost grow" id="kz-prev" ${kz.pos===0?'disabled':''}>Anterior</button>
         <button class="btn primary grow" id="kz-next-t">${kz.pos+1<kz.deck.length?'Siguiente':'Terminar'}</button>
       </div>
-      <div class="mut small" style="margin-top:12px">Traza cada trazo en orden (números) y dirección (flecha). No hay corrección automática: compara tú con la guía y repite.<br><span style="font-size:10px;opacity:.6">Orden de trazos: datos KanjiVG (CC BY-SA 3.0)</span></div>
+      <div id="kz-msg" class="mut small" style="margin-top:12px;min-height:18px">Traza en orden: la guía comprueba inicio, dirección y orden de cada trazo (no la forma).</div>
+      <div class="mut small" style="font-size:10px;opacity:.6;margin-top:4px">Orden de trazos: datos KanjiVG (CC BY-SA 3.0)</div>
     </div>`;
   }
   const uniq = [];
@@ -492,13 +531,43 @@ function bindKana() {
     if (!items.length) return;
     if (kz.mode === 'trace') {
       kz.deck = items.map(it => [...it]);
-      kz.pos = 0; kz.strokes = []; kz.showGuide = true;
+      kz.pos = 0; kz.strokes = []; kz.showGuide = true; kz.exp = 0;
       kz.phase = 'trace'; renderKana(); return;
+    }
+    if (kz.mode === 'listen') {
+      if (!voiceFor('ja')) { alert('Este navegador no tiene una voz japonesa instalada; sin ella el dictado no puede sonar. En el móvil suele venir con el sistema.'); return; }
+      const pool = items.map(it => it[0]);
+      kz.deck = kzShuffle(items.map(it => [...it]));
+      kz.deck.forEach(it => { it.opts = kzShuffle([it[0], ...kzShuffle(pool.filter(x => x !== it[0])).slice(0,3)]); });
+      kz.pos = 0; kz.total = kz.deck.length; kz.cleared = 0; kz.firstTryOk = 0; kz.wrongs = []; kz.fb = null;
+      kz.phase = 'listen'; renderKana(); return;
     }
     kz.deck = kzShuffle(items.map(it => [...it]));
     kz.pos = 0; kz.total = kz.deck.length; kz.cleared = 0; kz.firstTryOk = 0; kz.wrongs = []; kz.fb = null;
     kz.phase = 'quiz'; renderKana();
   };
+  const rev = document.getElementById('kz-review');
+  if (rev) rev.onclick = () => {
+    const due = Object.keys(kanaStats).filter(k => isDue(kanaStats[k]) && KANA_READ[k]);
+    if (!due.length) return;
+    kz.deck = kzShuffle(due.map(k => [k, KANA_READ[k]]));
+    kz.pos = 0; kz.total = kz.deck.length; kz.cleared = 0; kz.firstTryOk = 0; kz.wrongs = []; kz.fb = null;
+    kz.phase = 'quiz'; renderKana();
+  };
+  const replay = document.getElementById('kz-replay');
+  if (replay) {
+    speakText(kz.deck[kz.pos][0], 'ja-JP');
+    replay.onclick = () => speakText(kz.deck[kz.pos][0], 'ja-JP');
+    app.querySelectorAll('[data-kopt]').forEach(b => b.onclick = () => {
+      if (kz.fb) return;
+      const q = kz.deck[kz.pos];
+      const ok = b.dataset.kopt === q[0];
+      if (!q._t) { q._t = true; if (ok) kz.firstTryOk++; else kz.wrongs.push(q); }
+      kanaHit(q[0], ok);
+      if (ok) kz.cleared++; else kz.deck.push(q);
+      kz.fb = { ok, sel: b.dataset.kopt }; renderKana();
+    });
+  }
   const check = document.getElementById('kz-check');
   const ans = document.getElementById('kz-ans');
   if (ans) { ans.focus(); ans.onkeydown = e => { if (e.key==='Enter' && check) check.click(); }; }
@@ -515,7 +584,7 @@ function bindKana() {
   const next = document.getElementById('kz-next');
   if (next) { next.focus(); next.onkeydown = e => { if (e.key==='Enter') next.click(); }; next.onclick = () => {
     kz.pos++; kz.fb = null;
-    kz.phase = kz.pos >= kz.deck.length ? 'results' : 'quiz';
+    kz.phase = kz.pos >= kz.deck.length ? 'results' : (kz.mode === 'listen' ? 'listen' : 'quiz');
     renderKana();
   }; }
   const retry = document.getElementById('kz-retry');
@@ -542,6 +611,18 @@ function bindKana() {
           ctx.fillText(item[0], 320, 350);
         }
       }
+      const lay0 = kanaOrderLayout(item[0]);
+      if (lay0 && kz.exp > 0) {
+        for (let i = 0; i < Math.min(kz.exp, lay0.length); i++) {
+          const sp = kanaPath(lay0[i].d);
+          const p1 = sp.getPointAtLength(sp.getTotalLength());
+          const x = lay0[i].ox + p1.x*lay0[i].sc, y = lay0[i].oy + p1.y*lay0[i].sc;
+          ctx.beginPath(); ctx.arc(x, y, 13, 0, 7);
+          ctx.fillStyle = 'rgba(46,204,113,.95)'; ctx.fill();
+          ctx.strokeStyle = '#0b0f1a'; ctx.lineWidth = 3.2; ctx.lineCap = 'round';
+          ctx.beginPath(); ctx.moveTo(x-6, y); ctx.lineTo(x-1.5, y+5); ctx.lineTo(x+7, y-5); ctx.stroke();
+        }
+      }
       ctx.lineWidth = 24; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
       ctx.strokeStyle = 'rgba(240,240,246,.92)';
       (kz.strokes || []).forEach(st => { if (!st.length) return; ctx.beginPath(); st.forEach((pt, i) => i ? ctx.lineTo(pt[0], pt[1]) : ctx.moveTo(pt[0], pt[1])); ctx.stroke(); });
@@ -550,16 +631,43 @@ function bindKana() {
     let drawing = false;
     canvas.addEventListener('pointerdown', e => { e.preventDefault(); drawing = true; kz.strokes = kz.strokes || []; kz.strokes.push([posOf(e)]); try { canvas.setPointerCapture(e.pointerId); } catch(_) {} redraw(); });
     canvas.addEventListener('pointermove', e => { if (!drawing) return; e.preventDefault(); kz.strokes[kz.strokes.length-1].push(posOf(e)); redraw(); });
-    ['pointerup','pointercancel','pointerleave'].forEach(ev => canvas.addEventListener(ev, () => { drawing = false; }));
+    canvas.addEventListener('pointerup', () => {
+      drawing = false;
+      const lay = kanaOrderLayout(item[0]);
+      if (!lay || kz.exp >= lay.length) return;
+      const st = kz.strokes[kz.strokes.length-1];
+      if (!st || st.length < 2) { if (st) kz.strokes.pop(); redraw(); return; }
+      const e = lay[kz.exp];
+      const sp = kanaPath(e.d);
+      const p0 = sp.getPointAtLength(0), p1 = sp.getPointAtLength(sp.getTotalLength());
+      const x0 = e.ox + p0.x*e.sc, y0 = e.oy + p0.y*e.sc;
+      const x1 = e.ox + p1.x*e.sc, y1 = e.oy + p1.y*e.sc;
+      const s0 = st[0], s1 = st[st.length-1];
+      const T = 78;
+      const ok = Math.hypot(s0[0]-x0, s0[1]-y0) < T && Math.hypot(s1[0]-x1, s1[1]-y1) < T;
+      const msg = document.getElementById('kz-msg');
+      if (ok) {
+        kz.exp++;
+        if (msg) msg.innerHTML = kz.exp >= lay.length
+          ? '🎉 <b>Kana completo</b>: todos los trazos en orden y dirección'
+          : `✓ Trazo ${kz.exp} bien. Ahora el ${kz.exp+1}.`;
+        if (kz.exp >= lay.length) kanaHit(item[0], true);
+      } else {
+        kz.strokes.pop();
+        if (msg) msg.innerHTML = `✗ Ese no era el trazo ${kz.exp+1}: mira el número y la flecha de la guía.`;
+      }
+      redraw();
+    });
+    ['pointercancel','pointerleave'].forEach(ev => canvas.addEventListener(ev, () => { drawing = false; }));
     redraw();
     const clr = document.getElementById('kz-clear');
-    if (clr) clr.onclick = () => { kz.strokes = []; redraw(); };
+    if (clr) clr.onclick = () => { kz.strokes = []; kz.exp = 0; const m = document.getElementById('kz-msg'); if (m) m.innerHTML = 'Traza en orden: la guía comprueba inicio, dirección y orden de cada trazo (no la forma).'; redraw(); };
     const gd = document.getElementById('kz-guide');
     if (gd) gd.onclick = () => { kz.showGuide = !(kz.showGuide !== false); gd.textContent = kz.showGuide === false ? 'Mostrar guía' : 'Ocultar guía'; redraw(); };
     const pv = document.getElementById('kz-prev');
-    if (pv) pv.onclick = () => { if (kz.pos > 0) { kz.pos--; kz.strokes = []; renderKana(); } };
+    if (pv) pv.onclick = () => { if (kz.pos > 0) { kz.pos--; kz.strokes = []; kz.exp = 0; renderKana(); } };
     const nt = document.getElementById('kz-next-t');
-    if (nt) nt.onclick = () => { if (kz.pos + 1 < kz.deck.length) { kz.pos++; kz.strokes = []; renderKana(); } else { kz.phase = 'setup'; renderKana(); } };
+    if (nt) nt.onclick = () => { if (kz.pos + 1 < kz.deck.length) { kz.pos++; kz.strokes = []; kz.exp = 0; renderKana(); } else { kz.phase = 'setup'; renderKana(); } };
   }
 }
 
@@ -573,18 +681,24 @@ function kanaPath(d) {
   }
   return p;
 }
-function drawKanaOrder(ctx, str) {
-  const KS = window.KANA_STROKES; if (!KS) return false;
+function kanaOrderLayout(str) {
+  const KS = window.KANA_STROKES; if (!KS) return null;
   const chars = [...str];
-  if (!chars.every(ch => KS[ch])) return false;
+  if (!chars.every(ch => KS[ch])) return null;
   const layouts = chars.length === 1
     ? [{ ox: 55, oy: 55, sc: 530/109 }]
     : [{ ox: 40, oy: 40, sc: 340/109 }, { ox: 330, oy: 330, sc: 250/109 }];
+  const out = [];
+  chars.forEach((ch, ci) => KS[ch].forEach(d => out.push({ d, ox: layouts[ci].ox, oy: layouts[ci].oy, sc: layouts[ci].sc })));
+  return out;
+}
+function drawKanaOrder(ctx, str) {
+  const entries = kanaOrderLayout(str);
+  if (!entries) return false;
   let n = 0;
-  chars.forEach((ch, ci) => {
-    const ds = KS[ch];
-    const L = layouts[ci];
-    ds.forEach((d, i) => {
+  {
+    entries.forEach(({ d, ox, oy, sc }) => {
+      const L = { ox, oy, sc };
       n++;
       const sp = kanaPath(d);
       const len = sp.getTotalLength();
@@ -610,7 +724,7 @@ function drawKanaOrder(ctx, str) {
       ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(-18,-9); ctx.lineTo(-18,9); ctx.closePath();
       ctx.fillStyle = 'rgba(139,148,255,.95)'; ctx.fill(); ctx.restore();
     });
-  });
+  }
   return true;
 }
 
@@ -809,6 +923,7 @@ function vLesson(l) {
     <div class="grow"><h1 class="small-h">${esc(l.title)}</h1><div class="sub">${l.lang==='ja'?'Japonés':'Inglés'} · sesión ${l.day}</div></div></header>
   <div class="card lesson-body rise" style="animation-delay:.05s">${l.body||''}</div>
   ${l.video_url?`<a class="card link-row clickable rise" style="animation-delay:.08s" href="${esc(l.video_url)}" target="_blank" rel="noopener"><span class="link-ic">${ic('video',18)}</span><span class="grow"><b>Vídeo de la sesión</b><span>YouTube</span></span>${ic('chev',16)}</a>`:''}
+  ${(l.body||'').includes('class="jp"') ? `<button class="btn block rise" style="animation-delay:.09s;margin-top:10px" id="les-listen">${ic('play',16,2)} Escuchar la lectura en voz alta</button><div id="les-listen-note" class="mut small" style="margin-top:6px"></div>` : ''}
   ${quiz.length?`<div class="sec rise" style="animation-delay:.1s"><h2>Mini-test</h2><span class="count">${quiz.length} preguntas</span></div><div id="quiz">${quiz.map((q,i)=>`
     <div class="card rise" style="animation-delay:${.12+i*.04}s" data-q="${i}"><b>${esc(q.q)}</b><div class="mt">
     ${q.opts.map((o,j)=>`<button class="quiz-opt" data-opt="${j}">${esc(o)}</button>`).join('')}</div></div>`).join('')}
@@ -844,7 +959,13 @@ const bankCardMeta = (bank, st) => {
 
 function vTests() {
   const subs = [...new Set(BANKS.map(b=>b.subject))];
+  const dueTests = cache.testStates.filter(isDue);
   return `${header('Tests','Bancos SMR de tus PDF: un test de 100 por tema')}
+  ${dueTests.length ? `<div class="card clickable rise" style="animation-delay:.04s" id="ts-review"><div class="lesson-row">
+    <span class="lang-badge en">🔁</span>
+    <div class="grow"><b>Repasar hoy · ${dueTests.length} pregunta${dueTests.length===1?'':'s'}</b>
+    <div class="meta">Repaso espaciado: tocan según cuándo las fallaste o las viste por última vez</div></div>
+    ${ic('chev',16)}</div></div>` : ''}
   ${subs.map((s,si) => `<div class="mod-head rise" style="animation-delay:${.05+si*.06}s"><h2>${esc(s)}</h2><span class="count">${BANKS.filter(b=>b.subject===s).length} temas</span></div>` +
     BANKS.filter(b=>b.subject===s).map((b,i) => {
       const st = bankStats(b.bank);
@@ -891,6 +1012,11 @@ function vTestBank(b) {
       <div class="chip" data-tcorr="now">Corregir al momento</div>
     </div>
     <div class="mut small" style="margin:2px 0 8px">Al final puedes moverte entre preguntas, cambiar respuestas y dejar alguna en blanco. Al momento es práctica rápida con explicación tras cada una.</div>
+    <div class="chips" style="margin-top:8px">
+      <div class="chip on" data-ttimer="no">Sin límite</div>
+      <div class="chip" data-ttimer="sim">Simulacro ⏱</div>
+    </div>
+    <div class="mut small" style="margin:2px 0 8px">El simulacro es como el examen: 45 segundos por pregunta en total, corrección al final y, si se acaba el tiempo, se corrige solo. Las que queden en blanco cuentan como falladas.</div>
     <button class="btn primary block" id="bt-start" style="margin-top:6px">${ic('play',17,2)} Empezar test</button>
   </div>
   ${failedEver>0 ? `<button class="btn block rise" style="animation-delay:.11s" id="bt-failed">${ic('sparkle',17,1.8)} Repasar las que te cuestan (${failedEver})</button>` : ''}
@@ -925,6 +1051,7 @@ async function startTestRun(b, opts = {}) {
   list = kzShuffle([...list]);
   if (opts.count && list.length > opts.count) list = list.slice(0, opts.count);
   trun = { bank:b, list, i:0, answers:[], locked:false, corr: opts.corr || 'now', resp: {} };
+  if (opts.sim) trun.sim = { total: list.length * 45, deadline: 0 };
   renderRun();
 }
 
@@ -986,6 +1113,7 @@ function renderRunEnd() {
     <div class="sub">Pregunta ${num} de ${n} · ${answered} respondida${answered===1?'':'s'}</div></div>
     <button class="btn ghost" id="run-end">Corregir</button></header>
   <div class="bar rise" style="animation-delay:.02s;margin:6px 0 16px"><i style="width:${Math.round(100*answered/n)}%"></i></div>
+  ${trun.sim ? `<div class="card rise" style="animation-delay:.03s;padding:10px 14px;margin-bottom:12px"><div class="row" style="justify-content:space-between"><span class="mut small">⏱ Tiempo restante</span><b id="sim-clock" style="font-size:18px"></b></div></div>` : ''}
   <div class="card rise" style="animation-delay:.04s">
     <div class="qnum">${esc(trun.bank.bank)}${q.qid ? ` · <span class="mut small">${esc(q.qid)}</span>` : ''}</div>
     <div class="qtext">${esc(q.question)}</div>
@@ -1016,9 +1144,24 @@ function renderRunEnd() {
     if (trun.i + 1 < n) { trun.i++; renderRunEnd(); }
     else document.getElementById('run-end').click();
   };
+  if (trun.sim) {
+    if (!trun.sim.deadline) trun.sim.deadline = Date.now() + trun.sim.total * 1000;
+    clearInterval(trun.timerId);
+    const tick = () => {
+      const el = document.getElementById('sim-clock');
+      if (!el) { clearInterval(trun.timerId); return; }
+      const left = Math.max(0, Math.round((trun.sim.deadline - Date.now()) / 1000));
+      el.textContent = `${Math.floor(left/60)}:${String(left%60).padStart(2,'0')}`;
+      if (left < 60) el.style.color = 'var(--warn, #e0a030)';
+      if (left <= 0) { clearInterval(trun.timerId); finishRun(); }
+    };
+    tick();
+    trun.timerId = setInterval(tick, 1000);
+  }
 }
 
 async function finishRun() {
+  clearInterval(trun.timerId);
   if (trun.corr === 'end') {
     trun.answers = trun.list.map(q => ({ question_id: q.id,
       chosen: (trun.resp[q.id] !== undefined ? trun.resp[q.id] : null),
@@ -1037,9 +1180,11 @@ async function finishRun() {
     const m = stateByQid();
     const srows = trun.answers.map(a => {
       const cur = m[a.question_id] || {};
+      const streak = a.correct ? (cur.streak||0) + 1 : 0;
       return { question_id: a.question_id, bank: trun.bank.bank,
         seen: (cur.seen||0) + 1, ok: (cur.ok||0) + (a.correct ? 1 : 0), fail: (cur.fail||0) + (a.correct ? 0 : 1),
-        last_correct: a.correct, updated_at: new Date().toISOString() };
+        last_correct: a.correct, streak, due: a.correct ? srsNext(streak) : srsFailDue(),
+        updated_at: new Date().toISOString() };
     });
     if (srows.length) {
       await sb.from('test_question_state').upsert(srows, { onConflict: 'question_id' });
@@ -1074,6 +1219,10 @@ function renderResult(score, total, saved) {
       <div class="fail-line good">Correcta: ${esc(q.options[q.correct])}</div>
       ${q.explanation?`<div class="mut small mt">${esc(q.explanation)}</div>`:''}
     </div>`;}).join('') : `<div class="card center rise" style="animation-delay:.08s"><b>¡Pleno!</b><div class="mut small mt">Ningún fallo en este test 🎉</div></div>`}
+  ${(() => { const m = {}; cache.testStates.forEach(st => { const x = m[st.bank] = m[st.bank] || { f:0 }; if (st.fail > 0 && !st.last_correct) x.f++; });
+    const weak = Object.entries(m).filter(([,x]) => x.f > 0).sort((a,b) => b[1].f - a[1].f).slice(0,3);
+    return weak.length ? `<div class="sec rise" style="animation-delay:.12s"><h2>Temas que peor llevas</h2></div>
+    <div class="card rise" style="animation-delay:.14s">${weak.map(([b,x]) => `<div class="kz-failrow"><span class="grow">${esc(b)}</span><span class="pill no">${x.f} por dominar</span></div>`).join('')}</div>` : ''; })()}
   <div class="row mt">
     ${fails.length ? `<button class="btn grow" id="res-failed">Repetir ${blanks ? 'falladas y en blanco' : 'falladas'}</button>` : ''}
     <button class="btn primary grow" id="res-back">Volver</button>
@@ -1083,10 +1232,21 @@ function renderResult(score, total, saved) {
   if (rf) rf.onclick = () => startTestRun(trun.bank, { mode: 'lastFailed', corr: 'now' });
 }
 
+async function startReviewRun() {
+  const ids = cache.testStates.filter(isDue).map(st => st.question_id);
+  if (!ids.length) { tab='tests'; render(); return; }
+  h(shell(`<header class="top rise"><button class="icon-btn" data-back>${ic('back',18)}</button><div class="grow"><h1 class="small-h">Repasar hoy</h1><div class="sub">Cargando preguntas...</div></div></header>`)); bindNav();
+  app.querySelector('[data-back]').onclick = () => { tab='tests'; render(); };
+  const { data } = await sb.from('test_questions').select('*').in('id', ids);
+  if (!data || !data.length) { tab='tests'; render(); return; }
+  trun = { bank:{ bank:'Repaso de hoy', subject:'Repaso' }, list: kzShuffle(data), i:0, answers:[], locked:false, corr:'now', resp:{} };
+  renderRun();
+}
+
 function openBank(b) {
   h(shell(vTestBank(b))); bindNav();
   app.querySelector('[data-back]').onclick = () => { tab='tests'; render(); };
-  let prepCount = 25, prepCorr = 'end';
+  let prepCount = 25, prepCorr = 'end', prepSim = false;
   app.querySelectorAll('[data-tcount]').forEach(c => c.onclick = () => {
     prepCount = +c.dataset.tcount;
     app.querySelectorAll('[data-tcount]').forEach(x => x.classList.toggle('on', x === c));
@@ -1095,7 +1255,11 @@ function openBank(b) {
     prepCorr = c.dataset.tcorr;
     app.querySelectorAll('[data-tcorr]').forEach(x => x.classList.toggle('on', x === c));
   });
-  document.getElementById('bt-start').onclick = () => startTestRun(b, { count: prepCount, corr: prepCorr });
+  app.querySelectorAll('[data-ttimer]').forEach(c => c.onclick = () => {
+    prepSim = c.dataset.ttimer === 'sim';
+    app.querySelectorAll('[data-ttimer]').forEach(x => x.classList.toggle('on', x === c));
+  });
+  document.getElementById('bt-start').onclick = () => startTestRun(b, { count: prepCount, corr: prepCorr, sim: prepSim });
   const bf = document.getElementById('bt-failed');
   if (bf) bf.onclick = () => startTestRun(b, { mode: 'failed', corr: 'now' });
 }
@@ -1268,6 +1432,8 @@ function bindActions() {
   app.querySelectorAll('[data-lesson]').forEach(b => b.onclick = () => openLesson(cache.lessons.find(x=>x.id===b.dataset.lesson)));
   app.querySelectorAll('[data-kana]').forEach(b => b.onclick = openKana);
   app.querySelectorAll('[data-bank]').forEach(b => b.onclick = () => openBank(BANKS.find(x=>x.bank===b.dataset.bank)));
+  const tsr = document.getElementById('ts-review');
+  if (tsr) tsr.onclick = () => startReviewRun();
 }
 
 function openNote(n) {
@@ -1296,6 +1462,20 @@ function openNote(n) {
 function openLesson(l) {
   h(shell(vLesson(l))); bindNav();
   app.querySelector('[data-back]').onclick = () => { tab='idiomas'; render(); };
+  const listen = document.getElementById('les-listen');
+  if (listen) listen.onclick = () => {
+    const lang = l.lang === 'ja' ? 'ja-JP' : 'en-US';
+    const note = document.getElementById('les-listen-note');
+    if (!voiceFor(lang.slice(0,2))) {
+      if (note) note.textContent = 'Este navegador no tiene voz ' + (l.lang==='ja'?'japonesa':'inglesa') + ' instalada; sin ella no puede sonar. Suele venir con el sistema del móvil.';
+      return;
+    }
+    const parts = [...app.querySelectorAll('.lesson-body .jp')].map(x => x.textContent.trim()).filter(Boolean);
+    if (!parts.length) return;
+    listen.disabled = true;
+    speakText(parts.join('. '), lang);
+    setTimeout(() => { listen.disabled = false; }, 2500);
+  };
   const send = document.getElementById('quiz-send');
   if (!send) return;
   send.onclick = async () => {
