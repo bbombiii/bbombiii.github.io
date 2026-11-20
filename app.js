@@ -1208,22 +1208,26 @@ function renderRunEnd() {
   };
   if (trun.sim) {
     if (!trun.sim.deadline) trun.sim.deadline = Date.now() + trun.sim.total * 1000;
-    clearInterval(trun.timerId);
+    clearInterval(runTimer);
     const tick = () => {
       const el = document.getElementById('sim-clock');
-      if (!el) { clearInterval(trun.timerId); return; }
+      if (!el) { clearInterval(runTimer); runTimer = null; return; }
       const left = Math.max(0, Math.round((trun.sim.deadline - Date.now()) / 1000));
       el.textContent = `${Math.floor(left/60)}:${String(left%60).padStart(2,'0')}`;
       if (left < 60) el.style.color = 'var(--warn, #e0a030)';
-      if (left <= 0) { clearInterval(trun.timerId); finishRun(); }
+      if (left <= 0) { clearInterval(runTimer); runTimer = null; finishRun(); }
     };
     tick();
-    trun.timerId = setInterval(tick, 1000);
+    runTimer = setInterval(tick, 1000);
   }
 }
 
+let runTimer = null;
 async function finishRun() {
-  clearInterval(trun.timerId);
+  if (!trun || trun.finishing) return;
+  trun.finishing = true;
+  clearInterval(runTimer); runTimer = null;
+  if (trun) clearInterval(trun.timerId);
   clearSavedRun();
   if (trun.corr === 'end') {
     trun.answers = trun.list.map(q => ({ question_id: q.id,
