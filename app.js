@@ -578,10 +578,12 @@ function drawKanaOrder(ctx, str) {
   const layouts = chars.length === 1
     ? [{ ox: 55, oy: 55, sc: 530/109 }]
     : [{ ox: 40, oy: 40, sc: 340/109 }, { ox: 330, oy: 340, sc: 250/109 }];
+  let n = 0;
   chars.forEach((ch, ci) => {
     const ds = KS[ch]; if (!ds) return;
     const L = layouts[ci];
     ds.forEach((d, i) => {
+      n++;
       const sp = kanaPath(d);
       const len = sp.getTotalLength();
       ctx.save(); ctx.translate(L.ox, L.oy); ctx.scale(L.sc, L.sc);
@@ -593,12 +595,12 @@ function drawKanaOrder(ctx, str) {
       ctx.beginPath(); ctx.arc(x0, y0, 14, 0, 7);
       ctx.fillStyle = 'rgba(139,148,255,.95)'; ctx.fill();
       ctx.fillStyle = '#0b0f1a'; ctx.font = 'bold 17px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(String(i+1), x0, y0+1);
+      ctx.fillText(String(n), x0, y0+1);
       const p1 = sp.getPointAtLength(len), p9 = sp.getPointAtLength(Math.max(0, len-2));
       const x1 = L.ox + p1.x*L.sc, y1 = L.oy + p1.y*L.sc;
       const ang = Math.atan2(p1.y-p9.y, p1.x-p9.x);
       ctx.save(); ctx.translate(x1, y1); ctx.rotate(ang);
-      ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(-14,-7); ctx.lineTo(-14,7); ctx.closePath();
+      ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(-18,-9); ctx.lineTo(-18,9); ctx.closePath();
       ctx.fillStyle = 'rgba(139,148,255,.95)'; ctx.fill(); ctx.restore();
     });
   });
