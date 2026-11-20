@@ -942,7 +942,9 @@ const BANKS = [
 const bankBadge = s => s==='Servicios' ? 'SRV' : s==='IPE II' ? 'IPE' : 'SOR';
 const bankStats = bank => {
   const l = cache.testAttempts.filter(a => a.bank===bank);
-  return l.length ? { n:l.length, best:Math.max(...l.map(a=>Math.round(100*a.score/a.total))), last:l[0] } : null;
+  if (!l.length) return null;
+  const fulls = l.filter(a => a.kind === 'full' || (a.kind == null && a.total >= 100));
+  return { n:l.length, best: fulls.length ? Math.max(...fulls.map(a=>Math.round(100*a.score/a.total))) : null, last:l[0] };
 };
 const stateByQid = () => { const m = {}; cache.testStates.forEach(s => { m[s.question_id] = s; }); return m; };
 const bankProgress = bank => {
@@ -952,7 +954,7 @@ const bankProgress = bank => {
 };
 const bankCardMeta = (bank, st) => {
   const parts = [];
-  if (st) parts.push(`${st.n} intento${st.n===1?'':'s'} · mejor nota ${st.best}%`);
+  if (st) parts.push(`${st.n} intento${st.n===1?'':'s'}${st.best!=null ? ` · mejor nota ${st.best}%` : ''}`);
   const pr = bankProgress(bank);
   if (pr) parts.push(`${pr.vistas} vistas · ${pr.dominadas} dominadas`);
   return parts.length ? parts.join(' · ') : 'Sin intentos todavía';
@@ -999,13 +1001,14 @@ function vTestBank(b) {
   ${THEME_OP?'<div class="ship-space" aria-hidden="true"></div>':''}
   <div class="tiles rise" style="animation-delay:.05s">
     <div class="tile"><div class="lab">${ic('target',14)} Intentos</div><div class="big">${st?st.n:0}</div></div>
-    <div class="tile"><div class="lab">${ic('check',14)} Mejor nota</div><div class="big">${st?st.best+'<small>%</small>':'—'}</div></div>
+    <div class="tile"><div class="lab">${ic('check',14)} Mejor nota</div><div class="big">${st && st.best!=null ? st.best+'<small>%</small>':'—'}</div></div>
   </div>
+  <div class="mut small rise" style="animation-delay:.055s;margin:2px 2px 0">La mejor nota solo cuenta los tests completos de 100 preguntas; los cortos y los repasos guardan su historial pero no compiten por esa marca.</div>
   ${pr ? `<div class="card rise" style="animation-delay:.06s">
     <div class="row" style="justify-content:space-between"><b>Progreso del banco</b><span class="mut small">${pr.dominadas} dominadas · ${pr.vistas} vistas</span></div>
     <div class="bar" style="margin-top:8px"><i style="width:${Math.min(100, pr.dominadas)}%"></i></div>
   </div>` : ''}
-  ${THEME_OP && st ? `<div class="wanted rise" style="animation-delay:.07s">
+  ${THEME_OP && st && st.best!=null ? `<div class="wanted rise" style="animation-delay:.07s">
     ${HAT(44,'w-hat')}
     <div style="height:22px"></div>
     <div class="w-title">WANTED</div>
@@ -1238,7 +1241,8 @@ async function finishRun() {
   const score = trun.answers.filter(a=>a.correct).length;
   h(shell(`<header class="top rise"><div class="grow"><h1 class="small-h">${esc(trun.bank.bank)}</h1><div class="sub">Guardando resultado...</div></div></header>`)); bindNav();
   let att = null;
-  const { data:attData } = await sb.from('test_attempts').insert({ bank:trun.bank.bank, total, score }).select().single();
+  const kind = trun.bank.bank === 'Repaso de hoy' ? 'review' : (total >= 100 ? 'full' : 'custom');
+  const { data:attData } = await sb.from('test_attempts').insert({ bank:trun.bank.bank, total, score, kind }).select().single();
   att = attData;
   if (att) {
     const rows = trun.answers.map(a=>({ attempt_id:att.id, question_id:a.question_id, chosen:a.chosen, correct:a.correct }));
