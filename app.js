@@ -791,7 +791,7 @@ const bankCardMeta = (bank, st) => {
 
 function vTests() {
   const subs = [...new Set(BANKS.map(b=>b.subject))];
-  return `${header('Tests','Bancos SMR de tus PDF: un test de 100 por tema, con corrección al momento')}
+  return `${header('Tests','Bancos SMR de tus PDF: un test de 100 por tema')}
   ${subs.map((s,si) => `<div class="mod-head rise" style="animation-delay:${.05+si*.06}s"><h2>${esc(s)}</h2><span class="count">${BANKS.filter(b=>b.subject===s).length} temas</span></div>` +
     BANKS.filter(b=>b.subject===s).map((b,i) => {
       const st = bankStats(b.bank);
