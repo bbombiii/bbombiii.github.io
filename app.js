@@ -460,7 +460,7 @@ function vKana() {
         <button class="btn ghost grow" id="kz-prev" ${kz.pos===0?'disabled':''}>Anterior</button>
         <button class="btn primary grow" id="kz-next-t">${kz.pos+1<kz.deck.length?'Siguiente':'Terminar'}</button>
       </div>
-      <div class="mut small" style="margin-top:12px">Traza el kana con el dedo siguiendo la guía. No hay corrección automática: compara tú con la guía y repite.</div>
+      <div class="mut small" style="margin-top:12px">Traza cada trazo en orden (números) y dirección (flecha). No hay corrección automática: compara tú con la guía y repite.<br><span style="font-size:10px;opacity:.6">Orden de trazos: datos KanjiVG (CC BY-SA 3.0)</span></div>
     </div>`;
   }
   const uniq = [];
@@ -537,8 +537,9 @@ function bindKana() {
       if (kz.showGuide !== false) {
         ctx.font = '400px "Hiragino Sans","Noto Sans JP","Yu Gothic",sans-serif';
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillStyle = 'rgba(255,255,255,.12)';
+        ctx.fillStyle = 'rgba(255,255,255,.08)';
         ctx.fillText(item[0], 320, 350);
+        drawKanaOrder(ctx, item[0]);
       }
       ctx.lineWidth = 24; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
       ctx.strokeStyle = 'rgba(240,240,246,.92)';
@@ -559,6 +560,48 @@ function bindKana() {
     const nt = document.getElementById('kz-next-t');
     if (nt) nt.onclick = () => { if (kz.pos + 1 < kz.deck.length) { kz.pos++; kz.strokes = []; renderKana(); } else { kz.phase = 'setup'; renderKana(); } };
   }
+}
+
+const kanaPathCache = new Map();
+function kanaPath(d) {
+  let p = kanaPathCache.get(d);
+  if (!p) {
+    p = document.createElementNS('http://www.w3.org/2000/svg','path');
+    p.setAttribute('d', d);
+    kanaPathCache.set(d, p);
+  }
+  return p;
+}
+function drawKanaOrder(ctx, str) {
+  const KS = window.KANA_STROKES; if (!KS) return;
+  const chars = [...str];
+  const layouts = chars.length === 1
+    ? [{ ox: 55, oy: 55, sc: 530/109 }]
+    : [{ ox: 40, oy: 40, sc: 340/109 }, { ox: 330, oy: 340, sc: 250/109 }];
+  chars.forEach((ch, ci) => {
+    const ds = KS[ch]; if (!ds) return;
+    const L = layouts[ci];
+    ds.forEach((d, i) => {
+      const sp = kanaPath(d);
+      const len = sp.getTotalLength();
+      ctx.save(); ctx.translate(L.ox, L.oy); ctx.scale(L.sc, L.sc);
+      ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      ctx.strokeStyle = 'rgba(139,148,255,.45)';
+      ctx.stroke(new Path2D(d)); ctx.restore();
+      const p0 = sp.getPointAtLength(0);
+      const x0 = L.ox + p0.x*L.sc, y0 = L.oy + p0.y*L.sc;
+      ctx.beginPath(); ctx.arc(x0, y0, 14, 0, 7);
+      ctx.fillStyle = 'rgba(139,148,255,.95)'; ctx.fill();
+      ctx.fillStyle = '#0b0f1a'; ctx.font = 'bold 17px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(String(i+1), x0, y0+1);
+      const p1 = sp.getPointAtLength(len), p9 = sp.getPointAtLength(Math.max(0, len-2));
+      const x1 = L.ox + p1.x*L.sc, y1 = L.oy + p1.y*L.sc;
+      const ang = Math.atan2(p1.y-p9.y, p1.x-p9.x);
+      ctx.save(); ctx.translate(x1, y1); ctx.rotate(ang);
+      ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(-14,-7); ctx.lineTo(-14,7); ctx.closePath();
+      ctx.fillStyle = 'rgba(139,148,255,.95)'; ctx.fill(); ctx.restore();
+    });
+  });
 }
 
 function vHoy() {
