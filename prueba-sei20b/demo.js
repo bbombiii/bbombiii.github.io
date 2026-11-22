@@ -324,7 +324,7 @@
     pill.type = 'button';
     pill.textContent = '↻ Actualizar';
     pill.setAttribute('aria-label', 'Buscar actualizaciones de la prueba');
-    pill.style.cssText = 'position:fixed;right:12px;bottom:86px;z-index:60;padding:8px 12px;border-radius:999px;border:1px solid rgba(150,180,255,.28);background:rgba(20,24,34,.92);color:#cdd6f4;font:600 12px/1 Inter,system-ui,sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.35);opacity:.92';
+    pill.style.cssText = 'position:fixed;left:12px;bottom:86px;z-index:60;padding:8px 12px;border-radius:999px;border:1px solid rgba(150,180,255,.28);background:rgba(20,24,34,.92);color:#cdd6f4;font:600 12px/1 Inter,system-ui,sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.35);opacity:.8';
     function armApply() {
       pill.disabled = false;
       pill.textContent = 'Nueva versión: toca para aplicar';
