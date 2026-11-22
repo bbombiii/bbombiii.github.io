@@ -852,7 +852,7 @@ function vHoy() {
       <div class="foot">${new Date(n.updated_at).toLocaleDateString('es-ES',{day:'numeric',month:'short'})}${n.tags?` · <span class="tag">${esc(n.tags)}</span>`:''}</div></div>`).join('')
     : `<div class="empty">${ic('note',26)}<div>Sin apuntes todavía. Empieza uno desde Apuntes.</div></div>`}
   </div>
-  <div class="ag-privacy rise" style="animation-delay:.34s"><div style="font-weight:700;letter-spacing:.06em;color:#b9bfcc;margin-bottom:4px">PRUEBA SEI 2.0 · DATOS FICTICIOS · NO AFECTA A TU SALA</div><a href="/privacy.html">Privacidad</a></div>`;
+  <div class="ag-privacy rise" style="animation-delay:.34s"><div style="font-weight:700;letter-spacing:.06em;color:#b9bfcc;margin-bottom:4px">PRUEBA A · 集中 SHŪCHŪ (NOMBRE PROPUESTO) · DATOS FICTICIOS · NO AFECTA A TU SALA</div><a href="/privacy.html">Privacidad</a></div>`;
 }
 
 function vTareas() {
