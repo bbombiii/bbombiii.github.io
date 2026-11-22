@@ -1,6 +1,6 @@
 /* SW de PRUEBA A: cachea solo la carcasa estatica de ESTA carpeta (/prueba-sei20/).
    Nunca intercepta Supabase (la demo lo sirve desde memoria) ni rutas fuera de su alcance. */
-const CACHE = 'shuchu-prueba-a-v2';
+const CACHE = 'shuchu-prueba-a-v3';
 const DIR = location.pathname.slice(0, location.pathname.lastIndexOf('/') + 1);
 const SHELL = [
   './', 'index.html',
