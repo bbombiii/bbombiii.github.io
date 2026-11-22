@@ -314,3 +314,41 @@
     return Promise.resolve(jsonResp({ message: 'demo: endpoint no usado por la app' }, 404));
   };
 })();
+
+/* ---------- 6) PWA de prueba: service worker acotado a esta carpeta + boton Actualizar ---------- */
+(function () {
+  'use strict';
+  if (!('serviceWorker' in navigator)) return;
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(function (reg) {
+    var pill = document.createElement('button');
+    pill.type = 'button';
+    pill.textContent = '↻ Actualizar';
+    pill.setAttribute('aria-label', 'Buscar actualizaciones de la prueba');
+    pill.style.cssText = 'position:fixed;right:12px;bottom:86px;z-index:60;padding:8px 12px;border-radius:999px;border:1px solid rgba(150,180,255,.28);background:rgba(20,24,34,.92);color:#cdd6f4;font:600 12px/1 Inter,system-ui,sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.35);opacity:.92';
+    function armApply() {
+      pill.disabled = false;
+      pill.textContent = 'Nueva versión: toca para aplicar';
+      pill.onclick = function () { if (reg.waiting) reg.waiting.postMessage('SKIP_WAITING'); };
+    }
+    pill.onclick = function () {
+      pill.disabled = true;
+      reg.update().then(function () {
+        if (reg.waiting) { armApply(); return; }
+        pill.textContent = 'Ya está al día ✓';
+        setTimeout(function () { pill.textContent = '↻ Actualizar'; pill.disabled = false; }, 2500);
+      }).catch(function () {
+        pill.textContent = 'Sin conexión';
+        setTimeout(function () { pill.textContent = '↻ Actualizar'; pill.disabled = false; }, 2500);
+      });
+    };
+    reg.addEventListener('updatefound', function () {
+      var nw = reg.installing;
+      if (nw) nw.addEventListener('statechange', function () {
+        if (nw.state === 'installed' && navigator.serviceWorker.controller) armApply();
+      });
+    });
+    if (reg.waiting) armApply();
+    document.body.appendChild(pill);
+    navigator.serviceWorker.addEventListener('controllerchange', function () { location.reload(); });
+  }).catch(function () {});
+})();
