@@ -324,7 +324,13 @@
     pill.type = 'button';
     pill.textContent = '↻ Actualizar';
     pill.setAttribute('aria-label', 'Buscar actualizaciones de la prueba');
-    pill.style.cssText = 'position:fixed;left:12px;bottom:86px;z-index:60;padding:8px 12px;border-radius:999px;border:1px solid rgba(150,180,255,.28);background:rgba(20,24,34,.92);color:#cdd6f4;font:600 12px/1 Inter,system-ui,sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.35);opacity:.8';
+    pill.className = 'pz-update-pill';
+    pill.style.cssText = 'display:inline-flex;align-items:center;gap:6px;margin-top:8px;padding:7px 12px;border-radius:999px;border:1px solid rgba(150,180,255,.28);background:rgba(20,24,34,.92);color:#cdd6f4;font:600 12px/1 Inter,system-ui,sans-serif';
+    function mountPill() {
+      var f = document.querySelector('.ag-privacy');
+      if (f && pill.parentNode !== f) f.appendChild(pill);
+    }
+    new MutationObserver(mountPill).observe(document.body, { childList: true, subtree: true });
     function armApply() {
       pill.disabled = false;
       pill.textContent = 'Nueva versión: toca para aplicar';
@@ -348,7 +354,7 @@
       });
     });
     if (reg.waiting) armApply();
-    document.body.appendChild(pill);
+    mountPill();
     navigator.serviceWorker.addEventListener('controllerchange', function () { location.reload(); });
   }).catch(function () {});
 })();

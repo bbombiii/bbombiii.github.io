@@ -1,10 +1,10 @@
 /* SW de PRUEBA A: cachea solo la carcasa estatica de ESTA carpeta (/prueba-sei20/).
    Nunca intercepta Supabase (la demo lo sirve desde memoria) ni rutas fuera de su alcance. */
-const CACHE = 'shuchu-prueba-a-v3';
+const CACHE = 'shuchu-prueba-a-v4';
 const DIR = location.pathname.slice(0, location.pathname.lastIndexOf('/') + 1);
 const SHELL = [
   './', 'index.html',
-  'app.css?v=p6', 'app.js?v=p6', 'config.js?v=p6', 'demo.js?v=p6', 'kana-strokes.js?v=p6',
+  'app.css?v=p7', 'app.js?v=p7', 'config.js?v=p7', 'demo.js?v=p7', 'kana-strokes.js?v=p7',
   'fondo-barcos.jpg', 'fondo-barcos-wide.jpg',
   'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'
 ];
